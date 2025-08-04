@@ -34,7 +34,7 @@ sequenceDiagram
     FE->>DB: Create dataset record
     DB-->>FE: Return dataset_id
 
-    FE->>API: POST /jobs<br/>{pipeline: [job1, job2, job3], dataset_id, override: false}
+    FE->>API: POST /jobs<br/>{pipeline: [job1, job2, job3], dataset_id, overwrite: false}
     API->>API: Validate pipeline with Pydantic
     API->>DB: Check dependencies & existing jobs
     API->>DB: Create job records with status "pending"
