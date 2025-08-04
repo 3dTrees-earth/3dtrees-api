@@ -20,8 +20,6 @@ The API application serves as a **unified orchestration layer** between the fron
 
 The core philosophy: **Database as single source of truth** with the API handling all Galaxy communication through background tasks and database updates.
 
-You're absolutely right! Let me revise Features 1 and 2 to properly separate the "smart" validation from the "dumb" execution:
-
 ## 2. System Flow Diagram
 
 ```mermaid
