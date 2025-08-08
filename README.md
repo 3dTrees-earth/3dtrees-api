@@ -4,12 +4,12 @@ The API application serves as a **unified orchestration layer** between the fron
 
 **v1 Capabilities:**
 
-- **Slim API spec**: `POST /jobs` - accepts pipeline definitions for data processing workflows; `GET /jobs` – Lists jobs. Accepts a dataset ID to return jobs associated with that dataset.
-- **Job orchestration**: Manages complex job dependencies (standardization → segmentation → species ID) through database state
-- **Pipeline validation**: Uses Pydantic models to validate job structures and dependencies
-- **Background processing**: Async job execution with periodic Galaxy API polling (every 5 seconds)
-- **Database management**: Updates job statuses in database based on Galaxy responses; frontend subscribes to database for real-time updates
-- **Rerun/override support**: Ability to recreate previously-run jobs (as new jobs) with overwrite flags to overwrite previously computed outputs
+- **Slim API spec**: `POST /jobs` immediately invokes a named Galaxy workflow for a given `dataset_id` via BioBlend and persists the returned `invocation_id` and initial state; `GET /jobs` lists invocations optionally filtered by `dataset_id`.
+- **Workflow invocation (no orchestration DAG)**: The API directly invokes a single workflow on Galaxy per request. There is no internal pipeline/DAG engine in the API.
+- **Lightweight request validation (no heavy Pydantic DAG checks)**: Basic checks only (e.g., `dataset_id` exists; optionally workflow name allowlist). Galaxy is the source of truth for invocation validity.
+- **Cron-based status polling (no Celery)**: A cron job periodically queries Galaxy `show_invocation(invocation_id)` for all invocations that are not in a terminal state and updates their state in the database. Polling may run requests in parallel.
+- **Database management**: Maintains an `invocations` table keyed by `invocation_id` with fields like `dataset_id`, `workflow_name`, `state` (e.g., queued, in_progress, completed, failed), timestamps, and optional per-step/job summaries from Galaxy responses. Frontend/CLI read from this table for status.
+- **Rerun/override support**: Re-invocation of the workflow for a dataset is supported as a new invocation (optionally with overwrite flags if we choose to manage outputs at the storage layer).
 
 **Future Extensions:**
 
@@ -18,7 +18,7 @@ The API application serves as a **unified orchestration layer** between the fron
 - CLI support for job management
 - Enhanced job parameter customization
 
-The core philosophy: **Database as single source of truth** with the API handling all Galaxy communication through background tasks and database updates.
+The core philosophy: **Database as single source of truth** with the API handling Galaxy invocation on write and a cron poller keeping invocation state in sync.
 
 ## 2. System Flow Diagram
 
@@ -27,62 +27,56 @@ sequenceDiagram
     participant FE as Frontend
     participant API as API Application
     participant DB as Database
-    participant BG as Background Task
+    participant CRON as Cron Poller
     participant Galaxy as Galaxy API
 
     Note over FE: User uploads dataset
     FE->>DB: Create dataset record
     DB-->>FE: Return dataset_id
 
-    FE->>API: POST /jobs<br/>{pipeline: [job1, job2, job3], dataset_id, overwrite: false}
-    API->>API: Validate pipeline with Pydantic
-    API->>DB: Check dependencies & existing jobs
-    API->>DB: Create job records with status "pending"
-    API-->>FE: Return success (job_ids)
+    FE->>API: POST /jobs<br/>{dataset_id, workflow_name, overwrite: false}
+    API->>DB: Validate dataset_id exists (basic check)
+    API->>Galaxy: Invoke workflow via BioBlend
+    Galaxy-->>API: Return {invocation_id, state, ...}
+    API->>DB: Insert into invocations {invocation_id, dataset_id, workflow_name, state, ...}
+    API-->>FE: Return {invocation_id, state}
 
-    API->>BG: Start background task (async)
-
-    loop For each job in pipeline
-        BG->>DB: Check if dependencies complete
-        alt Dependencies ready
-            BG->>Galaxy: Start job with parameters
-            Galaxy-->>BG: Return galaxy_job_id
-            BG->>DB: Update job status to "running"
-
-            loop Every 5 seconds
-                BG->>Galaxy: Query job status
-                Galaxy-->>BG: Return current status
-                alt Status changed
-                    BG->>DB: Update job status
-                end
-            end
-
-            alt Job complete
-                BG->>Galaxy: Retrieve job outputs
-                Galaxy-->>BG: Return output file locations
-                BG->>DB: Update job status to "complete"<br/>Store output metadata
-            end
-        end
+    Note over CRON: Runs on schedule
+    CRON->>DB: Fetch invocations where state ∉ {completed, failed}
+    par For each invocation
+        CRON->>Galaxy: show_invocation(invocation_id)
+        Galaxy-->>CRON: Return current invocation state and step/job statuses
+        CRON->>DB: Update invocation row if state/details changed
+    and
     end
 
-    Note over DB,FE: Real-time subscription
-    DB-->>FE: Status updates (pending→running→complete)
+    Note over DB,FE: Frontend/CLI query DB for status
+    DB-->>FE: Status reflects Galaxy via periodic sync
 ```
 
 ## 3. Feature Breakdown
 
-### **Feature 1: Pydantic Job Validation System**
+### **Feature 1: Request validation and immediate workflow invocation**
 
-This feature creates a comprehensive validation framework that handles all complex pipeline logic including job type validation, dependency chain verification (DAG structure), parameter validation, and database lookups for existing jobs. It serves as the "smart" component that ensures incoming pipelines are valid, properly ordered, and ready for execution before passing them to the processing engine. It determines the target workflow to be run based on the input to `/api/jobs` and passes the workflow ID along with the other required parameters (dataset ID and any other required parameters) to the job processing engine.
+The API performs minimal validation on `POST /jobs` (e.g., ensuring `dataset_id` exists; optionally validating `workflow_name` against an allowlist) and immediately invokes the specified Galaxy workflow via BioBlend. The API returns the `invocation_id` and initial state from Galaxy.
 
-### **Feature 2: Job Pipeline Processing Engine**
+### **Feature 2: Invocations table and state model**
 
-This component is intentionally "dumb" - it receives workflow invocation details from the validation system and invokes that workflow. It manages job queue mechanics by interfacing with the celery task runner and updates the database according to the workflow step statuses. In this way, it tracks execution state and handles the basic flow of moving jobs from pending to running status without making complex decisions about pipeline validity or dependencies.
+An `invocations` table persists Galaxy `invocation_id`, `dataset_id`, `workflow_name`, `state` (e.g., queued, in_progress, completed, failed), timestamps, and optional step/job status summaries. This table is the single source of truth for client-facing status.
 
-### **Feature 3: Background Task Runner & Job Monitor**
+### **Feature 3: Cron poller for invocation status (parallel)**
 
-This feature implements the async background processing system that monitors Galaxy workflow invocations and updates the database accordingly. It manages the lifecycle of jobs from submission through completion, handles parallel job execution, and ensures database consistency throughout the process. We will use celery for this task.
+A cron job periodically queries Galaxy `show_invocation(invocation_id)` for all invocations not in a terminal state. Queries may be executed in parallel. Any state or step/job status changes are written back to the `invocations` table.
 
-### **Feature 4: Galaxy API Integration Layer**
+### **Feature 4: Galaxy API integration layer**
 
-This component provides a clean interface to Galaxy's API for job submission, status monitoring, and output retrieval. It abstracts away Galaxy-specific communication details, handles API errors gracefully, and manages the mapping between internal job representations and Galaxy's job format.
+`bioblend` provides a clean interface to Galaxy's API for workflow invocation and status inspection. Errors from Galaxy propagate as API errors on invocation; invalid workflows or parameters will be surfaced by Galaxy.
+
+## 4. Endpoints (current minimal set)
+
+- `POST /jobs`
+  - Body: `{ dataset_id: string, workflow_name: string, overwrite?: boolean }`
+  - Behavior: Validate dataset exists → invoke workflow via BioBlend → persist `{invocation_id, state}` in `invocations` → return `{invocation_id, state}`.
+- `GET /jobs`
+  - Query: `dataset_id?: string`
+  - Behavior: List invocations (optionally filtered by `dataset_id`) with current state and basic details.
