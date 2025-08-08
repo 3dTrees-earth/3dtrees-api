@@ -77,11 +77,11 @@ This feature creates a comprehensive validation framework that handles all compl
 
 ### **Feature 2: Job Pipeline Processing Engine**
 
-This component is intentionally "dumb" - it takes pre-validated pipeline structures from the validation system and simply executes them in order. It manages job queue mechanics in the database, tracks execution state, and handles the basic flow of moving jobs from pending to running status without making complex decisions about pipeline validity or dependencies.
+This component is intentionally "dumb" - it receives workflow invocation details from the validation system and invokes that workflow. It manages job queue mechanics by interfacing with the celery task runner and updates the database according to the workflow step statuses. In this way, it tracks execution state and handles the basic flow of moving jobs from pending to running status without making complex decisions about pipeline validity or dependencies.
 
 ### **Feature 3: Background Task Runner & Job Monitor**
 
-This feature implements the async background processing system that monitors Galaxy jobs every 5 seconds and updates the database accordingly. It manages the lifecycle of jobs from submission through completion, handles parallel job execution, and ensures database consistency throughout the process.
+This feature implements the async background processing system that monitors Galaxy workflow invocations and updates the database accordingly. It manages the lifecycle of jobs from submission through completion, handles parallel job execution, and ensures database consistency throughout the process. We will use celery for this task.
 
 ### **Feature 4: Galaxy API Integration Layer**
 
