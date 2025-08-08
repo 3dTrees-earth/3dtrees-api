@@ -9,7 +9,7 @@ The API application serves as a **unified orchestration layer** between the fron
 - **Pipeline validation**: Uses Pydantic models to validate job structures and dependencies
 - **Background processing**: Async job execution with periodic Galaxy API polling (every 5 seconds)
 - **Database management**: Updates job statuses in database based on Galaxy responses; frontend subscribes to database for real-time updates
-- **Rerun/override support**: Ability to reprocess existing jobs with override flags
+- **Rerun/override support**: Ability to recreate previously-run jobs (as new jobs) with overwrite flags to overwrite previously computed outputs
 
 **Future Extensions:**
 
