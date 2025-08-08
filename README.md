@@ -4,7 +4,7 @@ The API application serves as a **unified orchestration layer** between the fron
 
 **v1 Capabilities:**
 
-- **Single endpoint**: `POST /jobs` - accepts pipeline definitions for data processing workflows
+- **Slim API spec**: `POST /jobs` - accepts pipeline definitions for data processing workflows; `GET /jobs` – Lists jobs. Accepts a dataset ID to return jobs associated with that dataset.
 - **Job orchestration**: Manages complex job dependencies (standardization → segmentation → species ID) through database state
 - **Pipeline validation**: Uses Pydantic models to validate job structures and dependencies
 - **Background processing**: Async job execution with periodic Galaxy API polling (every 5 seconds)
