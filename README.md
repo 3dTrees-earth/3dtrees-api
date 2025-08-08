@@ -73,7 +73,7 @@ sequenceDiagram
 
 ### **Feature 1: Pydantic Job Validation System**
 
-This feature creates a comprehensive validation framework that handles all complex pipeline logic including job type validation, dependency chain verification (DAG structure), parameter validation, and database lookups for existing jobs. It serves as the "smart" component that ensures incoming pipelines are valid, properly ordered, and ready for execution before passing them to the processing engine.
+This feature creates a comprehensive validation framework that handles all complex pipeline logic including job type validation, dependency chain verification (DAG structure), parameter validation, and database lookups for existing jobs. It serves as the "smart" component that ensures incoming pipelines are valid, properly ordered, and ready for execution before passing them to the processing engine. It determines the target workflow to be run based on the input to `/api/jobs` and passes the workflow ID along with the other required parameters (dataset ID and any other required parameters) to the job processing engine.
 
 ### **Feature 2: Job Pipeline Processing Engine**
 
