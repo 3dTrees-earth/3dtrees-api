@@ -75,7 +75,7 @@ A cron job periodically queries Galaxy `show_invocation(invocation_id)` for all 
 ## 4. Endpoints (current minimal set)
 
 - `POST /jobs`
-  - Body: `{ dataset_id: string, workflow_name: string, overwrite?: boolean }`
+  - Body: `{ dataset_id: string, workflow_name: string, overwrite?: boolean, parameters?: json / dict = {} }`
   - Behavior: Validate dataset exists → invoke workflow via BioBlend → persist `{invocation_id, state}` in `invocations` → return `{invocation_id, state}`.
 - `GET /jobs`
   - Query: `dataset_id?: string`
