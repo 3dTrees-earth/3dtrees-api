@@ -1,0 +1,114 @@
+{
+    "a_galaxy_workflow": "true",
+    "annotation": "Single tool workflow to create overviews",
+    "comments": [],
+    "creator": [
+        {
+            "class": "Person",
+            "identifier": "0000-0002-0424-2651",
+            "name": "Mirko M\u00e4licke"
+        }
+    ],
+    "format-version": "0.1",
+    "license": "CC-BY-4.0",
+    "name": "Overviews",
+    "report": {
+        "markdown": "\n# Workflow Execution Report\n\n## Workflow Inputs\n```galaxy\ninvocation_inputs()\n```\n\n## Workflow Outputs\n```galaxy\ninvocation_outputs()\n```\n\n## Workflow\n```galaxy\nworkflow_display()\n```\n"
+    },
+    "steps": {
+        "0": {
+            "annotation": "",
+            "content_id": null,
+            "errors": null,
+            "id": 0,
+            "input_connections": {},
+            "inputs": [
+                {
+                    "description": "",
+                    "name": "LAS / LAZ File"
+                }
+            ],
+            "label": "LAS / LAZ File",
+            "name": "Input dataset",
+            "outputs": [],
+            "position": {
+                "left": 0,
+                "top": 20
+            },
+            "tool_id": null,
+            "tool_state": "{\"optional\": false, \"format\": [\"laz\", \" las\"], \"tag\": null}",
+            "tool_version": null,
+            "type": "data_input",
+            "uuid": "f6932a8e-131b-4d6c-90e9-549b0e3d833b",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "1": {
+            "annotation": "",
+            "content_id": "3dtrees_overviews",
+            "errors": null,
+            "id": 1,
+            "input_connections": {
+                "input": {
+                    "id": 0,
+                    "output_name": "output"
+                }
+            },
+            "inputs": [
+                {
+                    "description": "runtime parameter for tool 3D Trees Overview Generator",
+                    "name": "input"
+                }
+            ],
+            "label": null,
+            "name": "3D Trees Overview Generator",
+            "outputs": [
+                {
+                    "name": "top_views",
+                    "type": "input"
+                },
+                {
+                    "name": "section_views",
+                    "type": "input"
+                },
+                {
+                    "name": "overview_round",
+                    "type": "gif"
+                }
+            ],
+            "position": {
+                "left": 264,
+                "top": 0
+            },
+            "post_job_actions": {},
+            "tool_id": "3dtrees_overviews",
+            "tool_state": "{\"camera_distance\": \"35.0\", \"cmap\": \"turbo\", \"image_height\": \"768\", \"image_width\": \"1024\", \"input\": {\"__class__\": \"RuntimeValue\"}, \"max_points\": \"100000000\", \"section_width\": \"10\", \"top_views_deg\": \"10\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
+            "tool_version": "1.0.0",
+            "type": "tool",
+            "uuid": "ff25a841-fd0b-4bcd-84b4-b3a3955f35cb",
+            "when": null,
+            "workflow_outputs": [
+                {
+                    "label": "overview_round",
+                    "output_name": "overview_round",
+                    "uuid": "5c4ebd90-63d9-4c85-8350-46c02f916ff7"
+                },
+                {
+                    "label": "top_views",
+                    "output_name": "top_views",
+                    "uuid": "ff2dec43-1460-4244-aec9-5a1829ff4cbc"
+                },
+                {
+                    "label": "section_views",
+                    "output_name": "section_views",
+                    "uuid": "4f0a071e-81f4-42e2-bd13-2f6979bce5cd"
+                }
+            ]
+        }
+    },
+    "tags": [
+        "3DTrees"
+    ],
+    "uuid": "5e5b2233-4ac0-475e-90bf-a722c8f32608",
+    "version": 0
+}
