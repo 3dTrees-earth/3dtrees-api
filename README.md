@@ -62,7 +62,7 @@ The API performs minimal validation on `POST /jobs` (e.g., ensuring `dataset_id`
 
 ### **Feature 2: Invocations table and state model**
 
-An `invocations` table persists Galaxy `invocation_id`, `dataset_id`, `workflow_name`, `state` (e.g., queued, in_progress, completed, failed), timestamps, and optional step/job status summaries. This table is the single source of truth for client-facing status.
+An `workflow_invocations` table persists Galaxy `invocation_id`, `dataset_id`, `workflow_name`, `state` (e.g., queued, in_progress, completed, failed), timestamps, and optional step/job status summaries. This table is the single source of truth for client-facing status.
 
 ### **Feature 3: Cron poller for invocation status (parallel)**
 
