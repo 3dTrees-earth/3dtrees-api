@@ -22,6 +22,8 @@ dependencies = [
     "asyncio>=3.4.3",
     "aiofiles>=23.0.0",
     "httpx>=0.25.0",
+    "boto3>=1.34.0",
+    "botocore>=1.34.0",
 ]
 
 [project.optional-dependencies]

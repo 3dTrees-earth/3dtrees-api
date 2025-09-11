@@ -5,6 +5,17 @@ from enum import StrEnum
 from pydantic import BaseModel
 
 
+class Dataset(BaseModel):
+    id: Optional[int]
+    uuid: str
+    title: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    user_id: str
+    acquisition_date: datetime
+    bucket_path: str
+    file_name: Optional[str] = None
+    visibility: Optional[str] = None
 
 class WorkflowName(StrEnum):
     OVERVIEW = "overviews"

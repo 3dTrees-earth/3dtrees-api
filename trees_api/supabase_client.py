@@ -2,11 +2,14 @@ import os
 import logging
 from typing import Optional, Dict, Any, List
 from pathlib import Path
+from uuid import uuid4
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
+
+from models import Dataset
 
 logger = logging.getLogger("uvicorn")
 
@@ -22,6 +25,9 @@ class SupabaseClient(BaseSettings):
     email: Optional[str] = Field(default="processor@3dtrees.earth", description="Supabase user email")
     password: Optional[str] = Field(default=None, description="Supabase user password")
     
+    # optional settings to overwrite table names
+    datasets_table: str = Field(default="datasets", description="Supabase datasets table name")
+
     # Client instance
     client: Optional[Client] = Field(default=None, init=False)
     
@@ -186,3 +192,37 @@ class SupabaseClient(BaseSettings):
         except Exception as e:
             # Wrap unexpected exceptions with context
             raise RuntimeError(f"Sign out failed: {e}") from e
+
+    def get_dataset(self, dataset_id: Optional[int] = None, uuid: Optional[str] = None) -> Dataset:
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        if dataset_id is None and uuid is None:
+            raise ValueError("Either dataset_id or uuid must be provided")
+        
+        query = self.client.table(self.datasets_table).select("*")
+        if dataset_id is not None:
+            query = query.eq("id", dataset_id)
+        else:
+            query = query.eq("uuid", uuid)
+        
+        response = query.execute()
+        return Dataset.model_validate(response.data[0])
+
+    def create_dataset(self, bucket_path: str,acquisition_date: datetime, title: str = None, file_name: str = None, visibility: str = None) -> Dataset:
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        user_id = self.get_current_user()["user"].id
+
+        response = self.client.table(self.datasets_table).insert({
+            "uuid": uuid4(),
+            "user_id": user_id,
+            "bucket_path": bucket_path,
+            "acquisition_date": acquisition_date,
+            "title": title,
+            "file_name": file_name,
+            "visibility": visibility
+        }).execute()
+
+        return Dataset.model_validate(response.data[0])
