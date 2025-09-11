@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from galaxy_client import GalaxyClient
 from supabase_client import SupabaseClient
+from storage_client import StorageClient
 
 
 
@@ -27,6 +28,15 @@ def get_supabase_client() -> SupabaseClient:
     client.connect()
 
     return client
+
+@lru_cache()
+def get_storage_client() -> StorageClient:
+    """Get S3 client instance."""
+    client = StorageClient()
+    client.connect()
+
+    return client
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -65,7 +75,6 @@ class JobCreateRequest(BaseModel):
 
 
 
-
 @app.get("/")
 def info():
     return {"message": "3DTrees API is running"}
@@ -79,16 +88,16 @@ def create_job(
     parameters: dict = {},
     galaxy: GalaxyClient = Depends(get_galaxy_client),
     supabase: SupabaseClient = Depends(get_supabase_client)
+    storage: StorageClient = Depends(get_storage_client)
 ):
-    # Clients are automatically injected
     pass
 
 @app.get("/jobs")
 def list_jobs(
     dataset_id: Optional[str] = None,
-    supabase: SupabaseClient = Depends(get_supabase_client)
+    supabase: SupabaseClient = Depends(get_supabase_client),
+    storage: StorageClient = Depends(get_storage_client)
 ):
-    # Supabase client is automatically injected
     pass
 
 
