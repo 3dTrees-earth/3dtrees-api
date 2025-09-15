@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install && \
 
 COPY . /src
 
-RUN cd /src && pip install -e .
+RUN cd /src && pip install -e . && pip install pytest pytest-asyncio
 
-WORKDIR /src/trees_api
-CMD ["python", "server.py"]
+WORKDIR /src
+CMD ["python", "trees_api/server.py"]
