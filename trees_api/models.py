@@ -18,8 +18,8 @@ class Dataset(BaseModel):
     visibility: Optional[str] = None
 
 class WorkflowName(StrEnum):
-    OVERVIEW = "overviews"
-    STANDARDIZATION = "standardization"
+    OVERVIEW = "Overviews"
+    SEGMENTATION = "Segmentation"
 
 class WorkflowStatus(StrEnum):
     PENDING = "pending"
@@ -46,8 +46,4 @@ class WorkflowInvocation(BaseModel):
         
         return self.payload == other
 
-class CreateWorkflowInvocation(BaseModel):
-    dataset_id: int
-    workflow_name: WorkflowName
-    payload: dict = {}
 

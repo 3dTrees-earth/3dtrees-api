@@ -4,12 +4,13 @@ from pathlib import Path
 from trees_api.models import Dataset
 from trees_api.galaxy_client import GalaxyClient
 from trees_api.storage_client import StorageClient
+from trees_api.supabase_client import SupabaseClient
 
 
-def test_workflow(test_remote_file: Dataset, galaxy_client: GalaxyClient, storage_client: StorageClient):
+def test_workflow(test_remote_file: Dataset, galaxy_client: GalaxyClient, storage_client: StorageClient, supabase_client: SupabaseClient):
     # create the workflow and the history for this test
     workflow_name = "Overviews"
-    galaxy_client.ensure_workflow_available(workflow_name)
+    workflow = galaxy_client.ensure_workflow_available(workflow_name)
     history = galaxy_client.create_history("Test - Workflow")
     
     # download the S3 stored file
@@ -23,6 +24,14 @@ def test_workflow(test_remote_file: Dataset, galaxy_client: GalaxyClient, storag
         workflow_name=workflow_name,
         dataset_id=dataset.id,
         history_name="Test - Workflow Results"
+    )
+
+    # create the workflow invocation in Supabase
+    workflow_invocation = supabase_client.create_workflow_invocation(
+        workflow_uuid=workflow.latest_workflow_uuid,
+        dataset_id=test_remote_file.id,  # Use Supabase dataset ID, not Galaxy dataset ID
+        workflow_name=workflow_name,
+        payload={}
     )
 
     assert result is not None, "Workflow invocation failed"

@@ -10,7 +10,7 @@ from pydantic import Field
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 
-from trees_api.models import Dataset
+from trees_api.models import Dataset, WorkflowInvocation, WorkflowStatus
 
 logger = logging.getLogger("uvicorn")
 
@@ -28,6 +28,7 @@ class SupabaseClient(BaseSettings):
     
     # optional settings to overwrite table names
     datasets_table: str = Field(default="datasets", description="Supabase datasets table name")
+    invocations_table: str = Field(default="workflow_invocations", description="Supabase workflow invocations table name")
 
     # Client instance
     client: Optional[Client] = Field(default=None, init=False)
@@ -227,3 +228,18 @@ class SupabaseClient(BaseSettings):
         }).execute()
 
         return Dataset.model_validate(response.data[0])
+
+    def create_workflow_invocation(self, workflow_uuid: str, dataset_id: int, workflow_name: str, payload: dict = {}) -> WorkflowInvocation:
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        response = self.client.table(self.invocations_table).insert({
+            "dataset_id": dataset_id,
+            "invocation_id": workflow_uuid,
+            "workflow_name": workflow_name,
+            "payload": payload,
+            "status": WorkflowStatus.RUNNING,
+            "started_at": datetime.now().isoformat(),
+        }).execute()
+
+        return WorkflowInvocation.model_validate(response.data[0])
