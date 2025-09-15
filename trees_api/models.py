@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 from datetime import datetime
 from enum import StrEnum
 
@@ -39,7 +39,7 @@ class WorkflowInvocation(BaseModel):
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
 
-    def __eq__(self, other: 'WorkflowInvocation' | dict) -> bool:
+    def __eq__(self, other: Union['WorkflowInvocation', dict]) -> bool:
         """Compare two WorkflowInvocation or payload dicts to check for updates"""
         if not isinstance(other, dict):
             other = other.payload

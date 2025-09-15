@@ -38,9 +38,11 @@ class StorageClient(BaseSettings):
                 aws_secret_access_key=self.secret_key,
                 region_name=self.region
             )
-            self.client.head_bucket(Bucket=self.bucket_name)
+            # Test connection by trying to list buckets
+            # This will raise an exception if credentials are wrong
+            self.client.list_buckets()
             
-            logger.info(f"Successfully connected to storage service. Bucket: {self.bucket_name}")
+            logger.info(f"Successfully connected to storage service at {self.url}")
             return True
             
         except NoCredentialsError as e:
@@ -48,10 +50,7 @@ class StorageClient(BaseSettings):
             raise RuntimeError(f"Storage credentials error: {e}") from e
         except ClientError as e:
             error_code = e.response['Error']['Code']
-            if error_code == '404':
-                logger.error(f"Bucket '{self.bucket_name}' not found")
-                raise RuntimeError(f"Bucket '{self.bucket_name}' not found") from e
-            elif error_code == '403':
+            if error_code == '403':
                 logger.error("Access denied to storage service")
                 raise RuntimeError("Access denied to storage service") from e
             else:
@@ -74,7 +73,7 @@ class StorageClient(BaseSettings):
         if not self.client:
             raise RuntimeError("Not connected to storage service. Call connect() first.")
         try:
-            self.client.upload_file(self.bucket_name, key, str(file_path))
+            self.client.upload_file(str(file_path), self.bucket_name, key)
         except ClientError as e:
             logger.error("Failed to upload file '{key}': {e}")
             raise RuntimeError(f"Failed to upload file '{key}': {e}") from e
