@@ -10,6 +10,7 @@ from typing import Optional, Dict, Any, List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 from bioblend.galaxy.objects import GalaxyInstance as GalaxyObjectsInstance
+from bioblend.galaxy.objects.wrappers import Workflow
 
 logger = logging.getLogger("trees_api.galaxy_client")
 
@@ -259,7 +260,7 @@ class GalaxyClient(BaseSettings):
         except Exception as e:
             raise RuntimeError(f"Failed to connect to Galaxy: {e}") from e
     
-    def _find_workflow_by_uuid(self, workflow_uuid: str):
+    def _find_workflow_by_uuid(self, workflow_uuid: str) -> Workflow:
         """
         Find a workflow by UUID
         
@@ -280,7 +281,7 @@ class GalaxyClient(BaseSettings):
         workflows = self.gi.workflows.list()
         
         for workflow in workflows:
-            if workflow.id == workflow_uuid:
+            if workflow.latest_workflow_uuid == workflow_uuid:
                 logger.info(f"Found workflow: {workflow.name} (ID: {workflow.id})")
                 return workflow
                 
@@ -290,7 +291,7 @@ class GalaxyClient(BaseSettings):
             logger.error(f"  - {workflow.name} (ID: {workflow.id})")
         raise LookupError(f"Workflow with UUID '{workflow_uuid}' not found")
     
-    def _find_workflow_by_name(self, workflow_name: str):
+    def _find_workflow_by_name(self, workflow_name: str) -> Workflow:
         """
         Find a workflow by name.
         
@@ -321,7 +322,7 @@ class GalaxyClient(BaseSettings):
             logger.error(f"  - {workflow.name} (ID: {workflow.id})")
         raise LookupError(f"Workflow with name '{workflow_name}' not found")
     
-    def find_workflow(self, workflow_uuid: str):
+    def find_workflow(self, workflow_uuid: str) -> Workflow:
         """
         Find a workflow by UUID (public method for backward compatibility).
         
@@ -337,7 +338,7 @@ class GalaxyClient(BaseSettings):
         """
         return self._find_workflow_by_uuid(workflow_uuid)
     
-    def import_workflow(self, workflow_file_path: Path):
+    def import_workflow(self, workflow_file_path: Path) -> Workflow:
         """
         Import a workflow from a .ga file.
         
@@ -424,7 +425,7 @@ class GalaxyClient(BaseSettings):
         
         return self.workflow_registry[workflow_name]
     
-    def get_available_workflows(self, refresh: bool = False) -> Dict[str, str]:
+    def get_available_workflow_files(self, refresh: bool = False) -> Dict[str, str]:
         """
         Get all available workflow names and their UUIDs.
         
@@ -437,7 +438,7 @@ class GalaxyClient(BaseSettings):
 
         return self.workflow_registry.copy()
     
-    def get_workflow_info(self, workflow_name: str) -> Dict[str, Any]:
+    def get_workflow_info(self, workflow_name: str) -> Workflow:
         """
         Get detailed information about a workflow including its inputs.
         
@@ -451,21 +452,10 @@ class GalaxyClient(BaseSettings):
             KeyError: If workflow name is not registered
             RuntimeError: If workflow cannot be accessed
         """
-        # Get UUID from registry
-        workflow_uuid = self.get_workflow_uuid(workflow_name)
-        
         # Ensure workflow is available
         workflow = self.ensure_workflow_available(workflow_name)
         
-        return {
-            "name": workflow.name,
-            "id": workflow.id,
-            "uuid": workflow_uuid,
-            "inputs": workflow.inputs,
-            "annotation": workflow.annotation,
-            "tags": workflow.tags,
-            "version": workflow.version
-        }
+        return workflow
     
     def _find_workflow_file_by_uuid(self, workflow_uuid: str) -> Path:
         """
@@ -495,7 +485,7 @@ class GalaxyClient(BaseSettings):
         
         raise FileNotFoundError(f"No workflow file found for UUID '{workflow_uuid}' in {self.workflows_path}")
     
-    def _ensure_workflow_exists_by_uuid(self, workflow_uuid: str):
+    def _ensure_workflow_exists_by_uuid(self, workflow_uuid: str) -> Workflow:
         """
         Ensure a workflow exists in Galaxy, import it if it doesn't (internal method).
         
@@ -571,7 +561,7 @@ class GalaxyClient(BaseSettings):
                 raise
             raise RuntimeError(f"Error invoking workflow '{workflow_uuid}': {e}") from e
     
-    def ensure_workflow_available(self, workflow_name: str):
+    def ensure_workflow_available(self, workflow_name: str) -> Workflow:
         """
         Ensure a workflow is available in Galaxy (user-facing method).
         

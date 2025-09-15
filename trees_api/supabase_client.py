@@ -165,8 +165,8 @@ class SupabaseClient(BaseSettings):
             
         try:
             user = self.client.auth.get_user()
-            if user:
-                return {"user": user.user, "session": user.session}
+            if user and user.user:
+                return {"user": user.user, "session": getattr(user, 'session', None)}
             return None
         except Exception as e:
             logger.error(f"Error getting current user: {e}")
@@ -217,10 +217,10 @@ class SupabaseClient(BaseSettings):
         user_id = self.get_current_user()["user"].id
 
         response = self.client.table(self.datasets_table).insert({
-            "uuid": uuid4(),
+            "uuid": str(uuid4()),
             "user_id": user_id,
             "bucket_path": bucket_path,
-            "acquisition_date": acquisition_date,
+            "acquisition_date": acquisition_date.isoformat(),
             "title": title,
             "file_name": file_name,
             "visibility": visibility

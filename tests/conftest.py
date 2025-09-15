@@ -61,18 +61,18 @@ def supabase_client() -> SupabaseClient:
     client = SupabaseClient()
     client.connect()
     
-    # Authenticate with processor user for testing
+    # Authenticate with processor user for testing using environment variables
     try:
-        client.authenticate_user("processor@3dtrees.earth", "processor")
+        client.authenticate_user(client.email, client.password)
         logger.info("✅ Authenticated with processor user")
     except Exception as e:
         logger.warning(f"Failed to authenticate with processor user: {e}")
         logger.info("Attempting to create processor user...")
         try:
-            client.register_user("processor@3dtrees.earth", "processor")
+            client.register_user(client.email, client.password)
             logger.info("✅ Created processor user")
             # Now try to authenticate again
-            client.authenticate_user("processor@3dtrees.earth", "processor")
+            client.authenticate_user(client.email, client.password)
             logger.info("✅ Authenticated with newly created processor user")
         except Exception as reg_e:
             logger.error(f"Failed to create processor user: {reg_e}")
