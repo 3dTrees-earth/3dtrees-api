@@ -211,6 +211,21 @@ class SupabaseClient(BaseSettings):
         response = query.execute()
         return Dataset.model_validate(response.data[0])
 
+    def get_datasets(self, user_id: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[Dataset]:
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        query = self.client.table(self.datasets_table).select("*")
+        if user_id is not None:
+            query = query.eq("user_id", user_id)
+        
+        datasets = []
+        response = query.order("created_at", desc=True).limit(limit).offset(offset).execute()
+        for dataset in response.data:
+            datasets.append(Dataset.model_validate(dataset))
+
+        return datasets
+
     def create_dataset(self, bucket_path: str,acquisition_date: datetime, title: str = None, file_name: str = None, visibility: str = None) -> Dataset:
         if not self.client:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
