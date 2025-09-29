@@ -139,11 +139,17 @@ def create_job(
     # if there are no errors invoking the workflow, create the workflow invocation in Supabase
     try:
         workflow_invocation = supabase.create_workflow_invocation(
-            workflow_uuid=workflow.latest_workflow_uuid,
+            workflow_uuid=invocation_result["invocation_id"],
             dataset_id=dataset_id,
-            workflow_name=workflow_name,
-            payload=parameters
+            workflow_name=workflow_name
         )
+        
+        # Store the parameters in the parameters field
+        if parameters:
+            supabase.update_workflow_invocation(
+                workflow_invocation.invocation_id,
+                parameters=parameters
+            )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Creating workflow invocation in Supabase failed: {e} ")
 

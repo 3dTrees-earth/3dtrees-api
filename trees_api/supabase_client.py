@@ -293,7 +293,7 @@ class SupabaseClient(BaseSettings):
             if results_synced is not None:
                 query = query.eq("results_synced", results_synced)
             
-            response = query.order("created_at", desc=True).limit(limit).offset(offset).execute()
+            response = query.order("updated_at", desc=True).limit(limit).offset(offset).execute()
             
             invocations = []
             for invocation_data in response.data:
@@ -304,6 +304,37 @@ class SupabaseClient(BaseSettings):
             
         except Exception as e:
             raise RuntimeError(f"Failed to get workflow invocations: {e}") from e
+    
+    def get_workflow_invocations_by_dataset_id(self, dataset_id: int, limit: int = 100, offset: int = 0) -> List[WorkflowInvocation]:
+        """
+        Get workflow invocations for a specific dataset_id.
+        
+        Args:
+            dataset_id: The dataset ID to filter by (as string)
+            limit: Maximum number of invocations to return
+            offset: Number of invocations to skip
+            
+        Returns:
+            List of WorkflowInvocation objects
+            
+        Raises:
+            RuntimeError: If not connected to Supabase
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            response = self.client.table(self.invocations_table).select("*").eq("dataset_id", dataset_id).order("updated_at", desc=True).limit(limit).offset(offset).execute()
+            
+            invocations = []
+            for invocation_data in response.data:
+                invocations.append(WorkflowInvocation.model_validate(invocation_data))
+            
+            logger.info(f"Retrieved {len(invocations)} workflow invocations for dataset {dataset_id}")
+            return invocations
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to get workflow invocations for dataset {dataset_id}: {e}") from e
     
     def get_workflow_invocation_by_id(self, invocation_id: str) -> Optional[WorkflowInvocation]:
         """
