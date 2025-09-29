@@ -215,16 +215,30 @@ class SupabaseClient(BaseSettings):
         if not self.client:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
         
-        query = self.client.table(self.datasets_table).select("*")
-        if user_id is not None:
-            query = query.eq("user_id", user_id)
+        def _execute_query():
+            query = self.client.table(self.datasets_table).select("*")
+            if user_id is not None:
+                query = query.eq("user_id", user_id)
+            
+            datasets = []
+            response = query.order("created_at", desc=True).limit(limit).offset(offset).execute()
+            for dataset in response.data:
+                datasets.append(Dataset.model_validate(dataset))
+            return datasets
         
-        datasets = []
-        response = query.order("created_at", desc=True).limit(limit).offset(offset).execute()
-        for dataset in response.data:
-            datasets.append(Dataset.model_validate(dataset))
-
-        return datasets
+        try:
+            return _execute_query()
+        except Exception as e:
+            if "JWT expired" in str(e):
+                # Try to re-authenticate and retry once
+                logger.warning("JWT expired, attempting to re-authenticate...")
+                try:
+                    self.authenticate_user(self.email, self.password)
+                    return _execute_query()
+                except Exception as retry_e:
+                    raise RuntimeError(f"Failed to get datasets after re-authentication: {retry_e}") from retry_e
+            else:
+                raise RuntimeError(f"Failed to get datasets: {e}") from e
 
     def create_dataset(self, bucket_path: str,acquisition_date: datetime, title: str = None, file_name: str = None, visibility: str = None) -> Dataset:
         if not self.client:
@@ -293,7 +307,7 @@ class SupabaseClient(BaseSettings):
             if results_synced is not None:
                 query = query.eq("results_synced", results_synced)
             
-            response = query.order("updated_at", desc=True).limit(limit).offset(offset).execute()
+            response = query.order("created_at", desc=True).limit(limit).offset(offset).execute()
             
             invocations = []
             for invocation_data in response.data:
@@ -324,7 +338,7 @@ class SupabaseClient(BaseSettings):
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
         
         try:
-            response = self.client.table(self.invocations_table).select("*").eq("dataset_id", dataset_id).order("updated_at", desc=True).limit(limit).offset(offset).execute()
+            response = self.client.table(self.invocations_table).select("*").eq("dataset_id", dataset_id).order("created_at", desc=True).limit(limit).offset(offset).execute()
             
             invocations = []
             for invocation_data in response.data:
