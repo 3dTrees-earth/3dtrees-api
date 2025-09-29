@@ -8,11 +8,11 @@ import tempfile
 
 from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from galaxy_client import GalaxyClient
 from supabase_client import SupabaseClient
 from storage_client import StorageClient
-
 
 
 logger = logging.getLogger("uvicorn")
@@ -157,21 +157,59 @@ def create_job(
 
 @app.get("/jobs")
 def list_jobs(
-    dataset_id: Optional[str] = None,
+    dataset_id: Optional[int] = None,
     user_id: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
-    supabase: SupabaseClient = Depends(get_supabase_client),
-    storage: StorageClient = Depends(get_storage_client)
+    supabase: SupabaseClient = Depends(get_supabase_client)
 ):
-    if dataset_id is not None:
-        dataset = supabase.get_dataset(dataset_id)
-        return dataset
+    if user_id is not None:
+        # Get all dataset_ids that belong to the given user
+        datasets = supabase.get_datasets(user_id=user_id)
+        dataset_ids = [dataset.id for dataset in datasets if dataset.id is not None]
+        
+        if dataset_id is not None:
+            # Filter to only the specific dataset_id if provided
+            if dataset_id in dataset_ids:
+                dataset_ids = [dataset_id]
+            else:
+                return []  # User doesn't have access to this dataset
+        
+        # Get workflow invocations for the user's datasets
+        # Note: We need to get all invocations first, then apply limit/offset
+        # This is because we're filtering across multiple dataset_ids
+        all_invocations = []
+        for d_id in dataset_ids:
+            user_invocations = supabase.get_workflow_invocations_by_dataset_id(d_id, limit=1000)  # Get all for this dataset
+            all_invocations.extend(user_invocations)
+        
+        # Sort by creation time descending and apply limit/offset
+        all_invocations.sort(key=lambda x: x.created_at, reverse=True)
+        return all_invocations[offset:offset + limit]
+    
+    elif dataset_id is not None:
+        # Get workflow invocations for specific dataset_id
+        return supabase.get_workflow_invocations_by_dataset_id(dataset_id, limit=limit, offset=offset)
+    
     else:
-        datasets = supabase.get_datasets(user_id, limit, offset)
-        return datasets
+        # Get all workflow invocations (respecting limit and offset)
+        return supabase.get_workflow_invocations(limit=limit, offset=offset)
 
+
+class APIServerSettings(BaseSettings):
+    host: str = "0.0.0.0"
+    port: int = 8000
+    reload: bool = False
+
+    model_config = SettingsConfigDict(
+        case_sensitive=False,
+        cli_parse_args=True,
+        cli_ignore_unknown_args=True,
+        env_file=".env",
+        env_prefix="API_SERVER_",
+    )
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    settings = APIServerSettings()
+    uvicorn.run("trees_api.server:app", host=settings.host, port=settings.port, reload=settings.reload)
