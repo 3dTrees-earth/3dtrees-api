@@ -10,7 +10,7 @@ from pydantic import Field
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 
-from trees_api.models import Dataset, WorkflowInvocation, WorkflowStatus
+from trees_api.models import Dataset, WorkflowInvocation
 
 logger = logging.getLogger("uvicorn")
 
@@ -28,7 +28,7 @@ class SupabaseClient(BaseSettings):
     
     # optional settings to overwrite table names
     datasets_table: str = Field(default="datasets", description="Supabase datasets table name")
-    invocations_table: str = Field(default="workflow_invocations", description="Supabase workflow invocations table name")
+    invocations_table: str = Field(default="galaxy_workflow_invocations", description="Supabase workflow invocations table name")
 
     # Client instance
     client: Optional[Client] = Field(default=None, init=False)
@@ -244,7 +244,7 @@ class SupabaseClient(BaseSettings):
 
         return Dataset.model_validate(response.data[0])
 
-    def create_workflow_invocation(self, workflow_uuid: str, dataset_id: int, workflow_name: str, payload: dict = {}) -> WorkflowInvocation:
+    def create_workflow_invocation(self, workflow_uuid: str, dataset_id: int, workflow_name: str) -> WorkflowInvocation:
         if not self.client:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
         
@@ -252,9 +252,165 @@ class SupabaseClient(BaseSettings):
             "dataset_id": dataset_id,
             "invocation_id": workflow_uuid,
             "workflow_name": workflow_name,
-            "payload": payload,
-            "status": WorkflowStatus.RUNNING,
+            "status": "new",  # Galaxy state for newly created invocations
             "started_at": datetime.now().isoformat(),
+            "inputs": [],  # Initialize as empty list
+            "steps": [],   # Initialize as empty list
+            "outputs": {}, # Initialize as empty dict
+            "output_collections": {}, # Initialize as empty dict
+            "jobs": [],    # Initialize as empty list
+            "messages": [], # Initialize as empty list
+            "parameters": {}, # Initialize as empty dict
         }).execute()
 
         return WorkflowInvocation.model_validate(response.data[0])
+    
+    def get_workflow_invocations(self, status: Optional[str] = None, limit: int = 100, offset: int = 0, results_synced: Optional[bool] = None) -> List[WorkflowInvocation]:
+        """
+        Get workflow invocations from Supabase.
+        
+        Args:
+            status: Optional status filter
+            limit: Maximum number of invocations to return
+            offset: Number of invocations to skip
+            results_synced: Optional filter for results_synced field
+            
+        Returns:
+            List of WorkflowInvocation objects
+            
+        Raises:
+            RuntimeError: If not connected to Supabase
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            query = self.client.table(self.invocations_table).select("*")
+            
+            if status is not None:
+                query = query.eq("status", status)
+            
+            if results_synced is not None:
+                query = query.eq("results_synced", results_synced)
+            
+            response = query.order("created_at", desc=True).limit(limit).offset(offset).execute()
+            
+            invocations = []
+            for invocation_data in response.data:
+                invocations.append(WorkflowInvocation.model_validate(invocation_data))
+            
+            logger.info(f"Retrieved {len(invocations)} workflow invocations from Supabase")
+            return invocations
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to get workflow invocations: {e}") from e
+    
+    def get_workflow_invocation_by_id(self, invocation_id: str) -> Optional[WorkflowInvocation]:
+        """
+        Get a specific workflow invocation by invocation_id.
+        
+        Args:
+            invocation_id: The invocation ID to look for
+            
+        Returns:
+            WorkflowInvocation object if found, None otherwise
+            
+        Raises:
+            RuntimeError: If not connected to Supabase
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            response = self.client.table(self.invocations_table).select("*").eq("invocation_id", invocation_id).execute()
+            
+            if response.data:
+                return WorkflowInvocation.model_validate(response.data[0])
+            return None
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to get workflow invocation {invocation_id}: {e}") from e
+    
+    def update_workflow_invocation(self, invocation_id: str, **updates) -> WorkflowInvocation:
+        """
+        Update a workflow invocation in Supabase.
+        
+        Args:
+            invocation_id: The invocation ID to update
+            **updates: Fields to update (status, steps, inputs, outputs, jobs, messages, finished_at, etc.)
+            
+        Returns:
+            Updated WorkflowInvocation object
+            
+        Raises:
+            RuntimeError: If not connected to Supabase
+            LookupError: If invocation not found
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            # Convert datetime objects to ISO strings if present
+            update_data = {}
+            for key, value in updates.items():
+                if hasattr(value, 'isoformat'):  # datetime object
+                    update_data[key] = value.isoformat()
+                else:
+                    update_data[key] = value
+            
+            response = self.client.table(self.invocations_table).update(update_data).eq("invocation_id", invocation_id).execute()
+            
+            if not response.data:
+                raise LookupError(f"Workflow invocation {invocation_id} not found")
+            
+            logger.info(f"Updated workflow invocation {invocation_id} with: {list(updates.keys())}")
+            return WorkflowInvocation.model_validate(response.data[0])
+            
+        except LookupError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"Failed to update workflow invocation {invocation_id}: {e}") from e
+    
+    def get_workflow_invocations_by_status(self, status: str) -> List[WorkflowInvocation]:
+        """
+        Get all workflow invocations with a specific status.
+        
+        Args:
+            status: The status to filter by
+            
+        Returns:
+            List of WorkflowInvocation objects with the specified status
+            
+        Raises:
+            RuntimeError: If not connected to Supabase
+        """
+        return self.get_workflow_invocations(status=status)
+    
+    def get_unfinished_workflow_invocations(self) -> List[WorkflowInvocation]:
+        """
+        Get all workflow invocations that are not finished (not successful or errored).
+        
+        Returns:
+            List of unfinished WorkflowInvocation objects
+            
+        Raises:
+            RuntimeError: If not connected to Supabase
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            # Get invocations that are not finished (not in Galaxy's terminal states)
+            # Galaxy terminal states: 'ok', 'success', 'error', 'failed', 'cancelled', 'deleted', 'discarded', 'warning'
+            terminal_states = ["ok", "success", "error", "failed", "cancelled", "deleted", "discarded", "warning"]
+            response = self.client.table(self.invocations_table).select("*").not_.in_("status", terminal_states).execute()
+            
+            invocations = []
+            for invocation_data in response.data:
+                invocations.append(WorkflowInvocation.model_validate(invocation_data))
+            
+            logger.info(f"Retrieved {len(invocations)} unfinished workflow invocations from Supabase")
+            return invocations
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to get unfinished workflow invocations: {e}") from e

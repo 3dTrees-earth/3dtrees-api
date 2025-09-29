@@ -736,3 +736,242 @@ class GalaxyClient(BaseSettings):
             
         raise RuntimeError(f"Upload timeout after {timeout} seconds")
     
+    def get_workflow_invocations(self, workflow_id: Optional[str] = None, invocation_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """
+        Get workflow invocations from Galaxy.
+        
+        Args:
+            workflow_id: Optional workflow ID to filter invocations
+            invocation_ids: Optional list of specific invocation IDs to get
+            
+        Returns:
+            List of invocation data dictionaries with separated fields
+            
+        Raises:
+            RuntimeError: If not connected to Galaxy
+            RuntimeError: If Galaxy API call fails
+        """
+        if not self.gi:
+            raise RuntimeError("Not connected to Galaxy. Call connect() first.")
+            
+        logger.debug("Getting workflow invocations from Galaxy...")
+        
+        # Check if invocations API is available
+        if not hasattr(self.gi, 'invocations'):
+            logger.warning("Galaxy invocations API not available, returning empty list")
+            return []
+        
+        # Get invocations based on filters
+        if invocation_ids:
+            # Get specific invocations by ID
+            invocations = []
+            for inv_id in invocation_ids:
+                try:
+                    inv = self.gi.invocations.get(inv_id)
+                    if inv:
+                        invocations.append(inv)
+                except Exception as e:
+                    logger.warning(f"Could not get invocation {inv_id}: {e}")
+                    continue
+        else:
+            # Get all invocations or filter by workflow
+            try:
+                invocations = self.gi.invocations.list()
+            except Exception as e:
+                raise RuntimeError(f"Failed to list workflow invocations: {e}") from e
+            
+            # Filter by workflow_id if provided
+            if workflow_id:
+                invocations = [inv for inv in invocations if inv.workflow_id == workflow_id]
+        
+        # Convert to dictionaries with separated fields for efficient comparison
+        invocation_data = []
+        for inv in invocations:
+            # Extract jobs from steps
+            jobs = []
+            for step in getattr(inv, 'steps', []):
+                jobs.extend(getattr(step, 'jobs', []))
+            
+            invocation_data.append({
+                "id": inv.id,
+                "workflow_id": inv.workflow_id,
+                "state": inv.state,
+                "history_id": inv.history_id,
+                "update_time": inv.update_time,
+                "steps": [self._serialize_step(step) for step in getattr(inv, 'steps', [])],
+                "inputs": getattr(inv, 'inputs', {}),
+                "outputs": getattr(inv, 'outputs', {}),
+                "output_collections": getattr(inv, 'output_collections', {}),
+                "jobs": [job.__dict__ if hasattr(job, '__dict__') else job for job in jobs],
+                "messages": getattr(inv, 'messages', [])
+            })
+        
+        logger.info(f"Retrieved {len(invocation_data)} workflow invocations")
+        return invocation_data
+    
+    def _serialize_step(self, step) -> Dict[str, Any]:
+        """
+        Serialize a workflow step by filtering out non-serializable attributes.
+        
+        Args:
+            step: BioBlend workflow step object
+            
+        Returns:
+            Dictionary with serializable step data
+        """
+        if not hasattr(step, '__dict__'):
+            return step
+            
+        step_dict = step.__dict__.copy()
+        
+        # Remove non-serializable attributes
+        non_serializable = ['_cached_parent', 'is_modified', 'gi']
+        for attr in non_serializable:
+            step_dict.pop(attr, None)
+            
+        return step_dict
+    
+    def get_invocation_details(self, invocation_id: str) -> Dict[str, Any]:
+        """
+        Get detailed information about a specific workflow invocation.
+        
+        Args:
+            invocation_id: ID of the invocation to get details for
+            
+        Returns:
+            Dictionary with detailed invocation information
+            
+        Raises:
+            RuntimeError: If not connected to Galaxy
+            RuntimeError: If Galaxy API call fails
+            LookupError: If invocation not found
+        """
+        if not self.gi:
+            raise RuntimeError("Not connected to Galaxy. Call connect() first.")
+            
+        logger.debug(f"Getting details for invocation: {invocation_id}")
+        
+        # Check if invocations API is available
+        if not hasattr(self.gi, 'invocations'):
+            raise RuntimeError("Galaxy invocations API not available")
+        
+        # Get invocation details
+        try:
+            invocation = self.gi.invocations.get(invocation_id)
+        except Exception as e:
+            raise RuntimeError(f"Failed to get invocation {invocation_id} from Galaxy: {e}") from e
+        
+        if not invocation:
+            raise LookupError(f"Invocation {invocation_id} not found")
+        
+        # Get history details
+        history = None
+        if invocation.history_id:
+            try:
+                history = self.gi.histories.get(invocation.history_id)
+            except Exception as e:
+                logger.warning(f"Could not get history {invocation.history_id}: {e}")
+        
+        return {
+            "id": invocation.id,
+            "workflow_id": invocation.workflow_id,
+            "state": invocation.state,
+            "history_id": invocation.history_id,
+            "history_name": history.name if history else None,
+            "update_time": invocation.update_time,
+            "inputs": getattr(invocation, 'inputs', {}),
+            "outputs": getattr(invocation, 'outputs', {}),
+            "steps": [self._serialize_step(step) for step in getattr(invocation, 'steps', [])]
+        }
+    
+    def get_history_datasets(self, history_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all datasets from a Galaxy history.
+        
+        Args:
+            history_id: ID of the history to get datasets from
+            
+        Returns:
+            List of dataset information dictionaries
+            
+        Raises:
+            RuntimeError: If not connected to Galaxy
+            RuntimeError: If Galaxy API call fails
+            LookupError: If history not found
+        """
+        if not self.gi:
+            raise RuntimeError("Not connected to Galaxy. Call connect() first.")
+            
+        logger.debug(f"Getting datasets from history: {history_id}")
+        
+        # Get history
+        try:
+            history = self.gi.histories.get(history_id)
+        except Exception as e:
+            raise RuntimeError(f"Failed to get history {history_id} from Galaxy: {e}") from e
+        
+        if not history:
+            raise LookupError(f"History {history_id} not found")
+        
+        # Get datasets from history
+        try:
+            datasets = history.get_datasets()
+        except Exception as e:
+            raise RuntimeError(f"Failed to get datasets from history {history_id}: {e}") from e
+        
+        dataset_data = []
+        for dataset in datasets:
+            dataset_data.append({
+                "id": dataset.id,
+                "name": dataset.name,
+                "state": dataset.state,
+                "file_size": getattr(dataset, 'file_size', 0),
+                "file_ext": getattr(dataset, 'file_ext', ''),
+                "created_at": getattr(dataset, 'create_time', None),
+                "updated_at": getattr(dataset, 'update_time', None),
+                "download_url": f"{self.url}/api/histories/{history_id}/contents/{dataset.id}/display"
+            })
+        
+        logger.info(f"Retrieved {len(dataset_data)} datasets from history {history_id}")
+        return dataset_data
+    
+    def download_dataset(self, history_id: str, dataset_id: str, output_path: Path) -> bool:
+        """
+        Download a dataset from Galaxy history.
+        
+        Args:
+            history_id: ID of the history containing the dataset
+            dataset_id: ID of the dataset to download
+            output_path: Local path to save the dataset
+            
+        Returns:
+            True if download successful
+            
+        Raises:
+            RuntimeError: If not connected to Galaxy
+            RuntimeError: If Galaxy API call fails
+            LookupError: If dataset not found
+        """
+        if not self.gi:
+            raise RuntimeError("Not connected to Galaxy. Call connect() first.")
+            
+        logger.debug(f"Downloading dataset {dataset_id} from history {history_id}")
+        
+        # Get the dataset
+        try:
+            dataset = self.gi.datasets.get(dataset_id)
+        except Exception as e:
+            raise RuntimeError(f"Failed to get dataset {dataset_id} from Galaxy: {e}") from e
+        
+        if not dataset:
+            raise LookupError(f"Dataset {dataset_id} not found")
+        
+        # Download the dataset
+        try:
+            dataset.download(output_path)
+        except Exception as e:
+            raise RuntimeError(f"Failed to download dataset {dataset_id} to {output_path}: {e}") from e
+        
+        logger.info(f"Successfully downloaded dataset {dataset_id} to {output_path}")
+        return True
+    

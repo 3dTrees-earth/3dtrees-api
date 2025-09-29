@@ -30,12 +30,9 @@ def test_workflow(test_remote_file: Dataset, galaxy_client: GalaxyClient, storag
     workflow_invocation = supabase_client.create_workflow_invocation(
         workflow_uuid=workflow.latest_workflow_uuid,
         dataset_id=test_remote_file.id,  # Use Supabase dataset ID, not Galaxy dataset ID
-        workflow_name=workflow_name,
-        payload={}
+        workflow_name=workflow_name
     )
 
     assert result is not None, "Workflow invocation failed"
     assert "invocation_id" in result, "No invocation ID returned"
     assert "workflow_id" in result, "No workflow ID returned"
-
-    
