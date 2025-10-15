@@ -790,7 +790,28 @@ class GalaxyClient(BaseSettings):
             # Extract jobs from steps
             jobs = []
             for step in getattr(inv, 'steps', []):
-                jobs.extend(getattr(step, 'jobs', []))
+                # Check if step has a job_id (for tool steps)
+                if hasattr(step, 'job_id') and step.job_id:
+                    try:
+                        # Get the actual job status from Galaxy's job API
+                        actual_job = self.gi.jobs.get(step.job_id)
+                        job_state = actual_job.state
+                    except Exception as e:
+                        # Fall back to step state if job API fails
+                        logger.warning(f"Could not get job {step.job_id} status: {e}")
+                        job_state = getattr(step, 'state', 'unknown')
+                    
+                    # Create a job object with the actual job state
+                    job_data = {
+                        'id': step.job_id,
+                        'state': job_state,
+                        'step_id': getattr(step, 'id', None),
+                        'step_label': getattr(step, 'workflow_step_label', None)
+                    }
+                    jobs.append(job_data)
+                # Also check for jobs array (for steps that might have multiple jobs)
+                elif hasattr(step, 'jobs'):
+                    jobs.extend(getattr(step, 'jobs', []))
             
             invocation_data.append({
                 "id": inv.id,
@@ -968,7 +989,8 @@ class GalaxyClient(BaseSettings):
         
         # Download the dataset
         try:
-            dataset.download(output_path)
+            with open(output_path, 'wb') as f:
+                dataset.download(f)
         except Exception as e:
             raise RuntimeError(f"Failed to download dataset {dataset_id} to {output_path}: {e}") from e
         

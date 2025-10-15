@@ -459,3 +459,30 @@ class SupabaseClient(BaseSettings):
             
         except Exception as e:
             raise RuntimeError(f"Failed to get unfinished workflow invocations: {e}") from e
+    
+    def get_finished_unsynced_workflows(self) -> List[WorkflowInvocation]:
+        """
+        Get all workflow invocations that have finished_at set but results_synced is False.
+        This catches workflows that were completed via job state detection.
+        
+        Returns:
+            List of WorkflowInvocation objects that are finished but not synced
+            
+        Raises:
+            RuntimeError: If not connected to Supabase
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            response = self.client.table(self.invocations_table).select("*").not_.is_("finished_at", "null").eq("results_synced", False).execute()
+            
+            invocations = []
+            for invocation_data in response.data:
+                invocations.append(WorkflowInvocation.model_validate(invocation_data))
+            
+            logger.info(f"Retrieved {len(invocations)} finished but unsynced workflow invocations from Supabase")
+            return invocations
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to get finished unsynced workflow invocations: {e}") from e

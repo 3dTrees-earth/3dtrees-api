@@ -110,12 +110,48 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
                 if supabase_inv.status != galaxy_status:
                     logger.info(f"Updating status for invocation {supabase_inv.invocation_id}: {supabase_inv.status} -> {galaxy_status}")
                     update_data['status'] = galaxy_status
-                    
-                    # If workflow is finished, set finished_at timestamp
-                    if galaxy_status in ['ok', 'success', 'error', 'failed', 'cancelled', 'deleted', 'discarded', 'warning']:
-                        update_data['finished_at'] = datetime.now()
-                    
                     stats['status_updated'] += 1
+                
+                # Check if workflow is truly finished by examining both workflow state and job states
+                workflow_finished = False
+                should_update_status = False
+                
+                # First check: workflow invocation is in terminal state
+                if galaxy_status in ['ok', 'success', 'error', 'failed', 'cancelled', 'deleted', 'discarded', 'warning']:
+                    workflow_finished = True
+                    logger.debug(f"Workflow {supabase_inv.invocation_id} finished: workflow state is {galaxy_status}")
+                
+                # Second check: all individual jobs are in terminal states
+                elif galaxy_inv.get('jobs'):
+                    all_jobs_finished = True
+                    all_jobs_successful = True
+                    for job in galaxy_inv['jobs']:
+                        job_state = job.get('state', '')
+                        if job_state not in ['ok', 'error', 'failed', 'cancelled']:
+                            all_jobs_finished = False
+                            all_jobs_successful = False
+                            break
+                        if job_state != 'ok':
+                            all_jobs_successful = False
+                    
+                    if all_jobs_finished:
+                        workflow_finished = True
+                        should_update_status = True
+                        # Update workflow status based on job states
+                        if all_jobs_successful:
+                            update_data['status'] = 'ok'
+                            stats['status_updated'] += 1
+                            logger.info(f"Updating workflow status to 'ok' for invocation {supabase_inv.invocation_id}")
+                        else:
+                            update_data['status'] = 'error'
+                            stats['status_updated'] += 1
+                            logger.info(f"Updating workflow status to 'error' for invocation {supabase_inv.invocation_id}")
+                        logger.debug(f"Workflow {supabase_inv.invocation_id} finished: all jobs completed")
+                
+                # Set finished_at timestamp if workflow is finished
+                if workflow_finished and not supabase_inv.finished_at:
+                    update_data['finished_at'] = datetime.now()
+                    logger.info(f"Marking workflow {supabase_inv.invocation_id} as finished")
                 
                 # Check if jobs have changed
                 if supabase_inv.has_jobs_changed(galaxy_inv.get('jobs', [])):
@@ -129,23 +165,54 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
                     update_data['messages'] = galaxy_inv.get('messages', [])
                     stats['messages_updated'] += 1
                 
-                # Check if outputs have changed (only when workflow completes)
-                if galaxy_status in ['ok', 'success', 'error', 'failed', 'cancelled', 'deleted', 'discarded', 'warning']:
-                    if supabase_inv.has_outputs_changed(galaxy_inv.get('outputs', {})):
+                # Check if outputs have changed (when workflow is finished)
+                if workflow_finished:
+                    # Try to get outputs from Galaxy
+                    galaxy_outputs = galaxy_inv.get('outputs', {})
+                    galaxy_output_collections = galaxy_inv.get('output_collections', {})
+                    
+                    # If outputs are empty but we have a completed job, try to get outputs from job details
+                    if not galaxy_outputs and not galaxy_output_collections and galaxy_inv.get('jobs'):
+                        try:
+                            # Get outputs from the first completed job
+                            for job_data in galaxy_inv['jobs']:
+                                if job_data.get('state') == 'ok' and job_data.get('id'):
+                                    job_id = job_data['id']
+                                    actual_job = galaxy_client.gi.jobs.get(job_id)
+                                    if hasattr(actual_job, 'outputs'):
+                                        galaxy_outputs = actual_job.outputs
+                                    if hasattr(actual_job, 'output_collections'):
+                                        galaxy_output_collections = actual_job.output_collections
+                                    break
+                        except Exception as e:
+                            logger.warning(f"Could not extract outputs from job: {e}")
+                    
+                    if supabase_inv.has_outputs_changed(galaxy_outputs):
                         logger.info(f"Updating outputs for invocation {supabase_inv.invocation_id}")
-                        update_data['outputs'] = galaxy_inv.get('outputs', {})
+                        update_data['outputs'] = galaxy_outputs
                         stats['outputs_updated'] += 1
                     
-                    if supabase_inv.has_output_collections_changed(galaxy_inv.get('output_collections', {})):
+                    if supabase_inv.has_output_collections_changed(galaxy_output_collections):
                         logger.info(f"Updating output collections for invocation {supabase_inv.invocation_id}")
-                        update_data['output_collections'] = galaxy_inv.get('output_collections', {})
+                        update_data['output_collections'] = galaxy_output_collections
                         stats['outputs_updated'] += 1
                 
                 # Update steps if anything changed
                 if update_data:
-                    update_data['steps'] = galaxy_inv.get('steps', [])
-                    update_data['inputs'] = galaxy_inv.get('inputs', {})
+                    # Update step states based on job states
+                    updated_steps = []
+                    for step in galaxy_inv.get('steps', []):
+                        step_dict = dict(step) if isinstance(step, dict) else step.__dict__.copy()
+                        # If this step has a job_id, update its state from the actual job
+                        if step_dict.get('job_id') and galaxy_inv.get('jobs'):
+                            for job_data in galaxy_inv['jobs']:
+                                if job_data.get('id') == step_dict.get('job_id'):
+                                    step_dict['state'] = job_data.get('state', step_dict.get('state'))
+                                    break
+                        updated_steps.append(step_dict)
                     
+                    update_data['steps'] = updated_steps
+                    update_data['inputs'] = galaxy_inv.get('inputs', {})
                     
                     supabase_client.update_workflow_invocation(supabase_inv.invocation_id, **update_data)
                 
@@ -186,8 +253,31 @@ def sync_results(galaxy_client: GalaxyClient, supabase_client: SupabaseClient, s
             logger.error(f"Invocation {invocation_id} not found in Supabase")
             return False
         
+        # Get dataset details to access UUID
+        supabase_dataset = supabase_client.get_dataset(supabase_inv.dataset_id)
+        if not supabase_dataset:
+            logger.error(f"Dataset {supabase_inv.dataset_id} not found in Supabase")
+            return False
+        
         # Only sync if workflow is completed successfully
-        if supabase_inv.status not in ['ok', 'success']:
+        # Check both workflow status and job states to determine if truly completed
+        workflow_completed = False
+        
+        # First check: workflow status is in success states
+        if supabase_inv.status in ['ok', 'success']:
+            workflow_completed = True
+        # Second check: if workflow status is 'scheduled' but all jobs are completed
+        elif supabase_inv.status == 'scheduled' and supabase_inv.jobs:
+            all_jobs_completed = True
+            for job in supabase_inv.jobs:
+                job_state = job.get('state', '')
+                if job_state not in ['ok', 'error', 'failed', 'cancelled']:
+                    all_jobs_completed = False
+                    break
+            if all_jobs_completed:
+                workflow_completed = True
+        
+        if not workflow_completed:
             logger.info(f"Invocation {invocation_id} status is {supabase_inv.status}, skipping result sync")
             return True
         
@@ -234,7 +324,7 @@ def sync_results(galaxy_client: GalaxyClient, supabase_client: SupabaseClient, s
                     )
                     
                     # Upload to S3 storage
-                    s3_key = f"results/{supabase_inv.dataset_id}/{supabase_inv.workflow_name.lower()}/{result_filename}"
+                    s3_key = f"results/{supabase_dataset.uuid}/{supabase_inv.workflow_name.lower()}/{result_filename}"
                     logger.info(f"Uploading {result_filename} to S3 as {s3_key}...")
                     storage_client.upload_file(local_file_path, s3_key)
                     
@@ -271,8 +361,12 @@ def sync_completed_workflows(galaxy_client: GalaxyClient, supabase_client: Supab
     }
     
     try:
-        # Get all successful workflow invocations that haven't been synced yet
-        # Galaxy success states: 'ok' and 'success'
+        # Get all workflow invocations that:
+        # 1. Have status 'ok' or 'success', OR
+        # 2. Have finished_at set (indicating completion via job states)
+        # AND have not been synced yet
+        
+        # Query 1: Get by success status
         successful_invocations = []
         for status in ['ok', 'success']:
             invocations = supabase_client.get_workflow_invocations(
@@ -281,14 +375,28 @@ def sync_completed_workflows(galaxy_client: GalaxyClient, supabase_client: Supab
             )
             successful_invocations.extend(invocations)
         
-        logger.info(f"Found {len(successful_invocations)} successful workflow invocations that need result sync")
+        # Query 2: Get workflows with finished_at set but status still 'scheduled'
+        # This catches workflows completed via job state detection
+        if hasattr(supabase_client, 'get_finished_unsynced_workflows'):
+            finished_invocations = supabase_client.get_finished_unsynced_workflows()
+            successful_invocations.extend(finished_invocations)
         
-        for invocation in successful_invocations:
+        # Remove duplicates by invocation_id
+        seen_ids = set()
+        unique_invocations = []
+        for inv in successful_invocations:
+            if inv.invocation_id not in seen_ids:
+                seen_ids.add(inv.invocation_id)
+                unique_invocations.append(inv)
+        
+        logger.info(f"Found {len(unique_invocations)} workflow invocations that need result sync")
+        
+        for invocation in unique_invocations:
             stats['completed_workflows'] += 1
             
             # Sync results
             if sync_results(galaxy_client, supabase_client, storage_client, invocation.invocation_id):
-                # Mark as synced using the new results_synced field
+                # Mark as synced
                 supabase_client.update_workflow_invocation(
                     invocation.invocation_id,
                     results_synced=True,
