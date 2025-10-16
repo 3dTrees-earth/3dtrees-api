@@ -6,9 +6,9 @@ from threading import Lock
 
 from pydantic import BaseModel, Field
 
-from .galaxy_client import GalaxyClient
-from .supabase_client import SupabaseClient
-from .storage_client import StorageClient
+from trees_api.galaxy_client import GalaxyClient
+from trees_api.supabase_client import SupabaseClient
+from trees_api.storage_client import StorageClient
 
 logger = logging.getLogger("uvicorn")
 

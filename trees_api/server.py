@@ -9,10 +9,10 @@ from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .galaxy_client import GalaxyClient
-from .supabase_client import SupabaseClient
-from .storage_client import StorageClient
-from .connection_manager import connection_manager
+from trees_api.galaxy_client import GalaxyClient
+from trees_api.supabase_client import SupabaseClient
+from trees_api.storage_client import StorageClient
+from trees_api.connection_manager import connection_manager
 
 
 logger = logging.getLogger("uvicorn")
