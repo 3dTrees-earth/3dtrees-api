@@ -1,7 +1,6 @@
 import os
 from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
-from functools import lru_cache
 from pathlib import Path
 import logging
 import tempfile
@@ -10,72 +9,52 @@ from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from galaxy_client import GalaxyClient
-from supabase_client import SupabaseClient
-from storage_client import StorageClient
+from .galaxy_client import GalaxyClient
+from .supabase_client import SupabaseClient
+from .storage_client import StorageClient
+from .connection_manager import connection_manager
 
 
 logger = logging.getLogger("uvicorn")
 
-# Dependency injection functions
-@lru_cache()
-def get_galaxy_client() -> GalaxyClient:
-    """Get Galaxy client instance."""
-    client = GalaxyClient()
-    client.authenticate()
-    client.connect()
+# Dependency injection functions using ConnectionManager
+def get_galaxy_client() -> Optional[GalaxyClient]:
+    """Get Galaxy client instance from connection manager."""
+    return connection_manager.get_galaxy_client()
 
-    return client
+def get_supabase_client() -> Optional[SupabaseClient]:
+    """Get Supabase client instance from connection manager."""
+    return connection_manager.get_supabase_client()
 
-@lru_cache()
-def get_supabase_client() -> SupabaseClient:
-    """Get Supabase client instance."""
-    client = SupabaseClient()
-    client.connect()
-
-    try:
-        client.authenticate_user(client.email, client.password)
-    except Exception as e:
-        if "Authentication failed" in str(e):
-            client.register_user(client.email, client.password)
-            logger.info(f"New user created: {client.email}")
-        else:
-            raise e
-
-    return client
-
-@lru_cache()
-def get_storage_client() -> StorageClient:
-    """Get S3 client instance."""
-    client = StorageClient()
-    client.connect()
-
-    return client
+def get_storage_client() -> Optional[StorageClient]:
+    """Get Storage client instance from connection manager."""
+    return connection_manager.get_storage_client()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize connections on startup and cleanup on shutdown."""
-    # Pre-initialize clients to test connections during startup
     logger.info("Starting up 3DTrees API...")
     
-    # Test all client connections
-    galaxy_client = get_galaxy_client()
-    supabase_client = get_supabase_client()
-    storage_client = get_storage_client()
+    # Try to initialize all clients (but don't fail if they can't connect)
+    connection_manager.connect_galaxy()
+    connection_manager.connect_supabase()
+    connection_manager.connect_storage()
     
-    logger.info("All clients initialized successfully")
+    # Start background retry task
+    retry_task = await connection_manager.start_retry_task(interval=60)
+    
+    if connection_manager.all_connected():
+        logger.info("All clients initialized successfully")
+    else:
+        logger.warning("Some clients failed to initialize. API is running in degraded mode. Retrying in background...")
     
     yield  # FastAPI serves requests here
     
     # Cleanup on shutdown
     logger.info("Shutting down 3DTrees API...")
-    try:
-        supabase_client.sign_out()
-        logger.info("Supabase client signed out")
-    except Exception as e:
-        logger.warning(f"Error during Supabase sign out: {e}")
-    
+    await connection_manager.stop_retry_task()
+    connection_manager.cleanup()
     logger.info("Shutdown complete")
 
  
@@ -93,7 +72,34 @@ class JobCreateRequest(BaseModel):
 
 @app.get("/")
 def info():
-    return {"message": "3DTrees API is running"}
+    """Root endpoint showing API status and service health."""
+    status = connection_manager.get_status()
+    all_connected = connection_manager.all_connected()
+    
+    return {
+        "message": "3DTrees API is running",
+        "status": "healthy" if all_connected else "degraded",
+        "services": {
+            "galaxy": "connected" if status["galaxy"]["connected"] else "disconnected",
+            "supabase": "connected" if status["supabase"]["connected"] else "disconnected",
+            "storage": "connected" if status["storage"]["connected"] else "disconnected"
+        }
+    }
+
+@app.get("/health")
+def health_check():
+    """
+    Health check endpoint showing detailed status of all services.
+    Returns 200 if all services are connected, 503 if any service is down.
+    """
+    status = connection_manager.get_status()
+    all_connected = connection_manager.all_connected()
+    
+    return {
+        "status": "healthy" if all_connected else "degraded",
+        "services": status,
+        "message": "All services operational" if all_connected else "Some services are unavailable"
+    }
 
 
 @app.post("/jobs")
@@ -102,10 +108,17 @@ def create_job(
     workflow_name: str, 
     overwrite: bool = False, 
     parameters: dict = {},
-    galaxy: GalaxyClient = Depends(get_galaxy_client),
-    supabase: SupabaseClient = Depends(get_supabase_client),
-    storage: StorageClient = Depends(get_storage_client)
+    galaxy: Optional[GalaxyClient] = Depends(get_galaxy_client),
+    supabase: Optional[SupabaseClient] = Depends(get_supabase_client),
+    storage: Optional[StorageClient] = Depends(get_storage_client)
 ):
+    # Check if all required clients are available
+    if not galaxy:
+        raise HTTPException(status_code=503, detail="Galaxy service is unavailable. Please check /health for details.")
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Supabase service is unavailable. Please check /health for details.")
+    if not storage:
+        raise HTTPException(status_code=503, detail="Storage service is unavailable. Please check /health for details.")
     workflow_name = workflow_name.capitalize()
     history_name = f"{workflow_name} - {dataset_id}"
     # make sure the requested workflow exists in galaxy
@@ -161,8 +174,10 @@ def list_jobs(
     user_id: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
-    supabase: SupabaseClient = Depends(get_supabase_client)
+    supabase: Optional[SupabaseClient] = Depends(get_supabase_client)
 ):
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Supabase service is unavailable. Please check /health for details.")
     if user_id is not None:
         # Get all dataset_ids that belong to the given user
         datasets = supabase.get_datasets(user_id=user_id)
