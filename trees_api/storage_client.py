@@ -13,7 +13,8 @@ logger = logging.getLogger("trees_api.storage_client")
 class StorageClient(BaseSettings):
     access_key: str
     secret_key: str
-    bucket_name: str
+    raw_bucket_name: str
+    product_bucket_name: str
     url: str = Field(default="https://storage.googleapis.com")
     region: str = Field(default="eu")
 
@@ -40,7 +41,7 @@ class StorageClient(BaseSettings):
             )
             # Test connection by trying to list buckets
             # This will raise an exception if credentials are wrong
-            self.client.list_buckets()
+            #self.client.list_buckets()
             
             logger.info(f"Successfully connected to storage service at {self.url}")
             return True
@@ -64,7 +65,7 @@ class StorageClient(BaseSettings):
         if not self.client:
             raise RuntimeError("Not connected to storage service. Call connect() first.")
         try:
-            self.client.download_file(self.bucket_name, key, str(file_path))
+            self.client.download_file(self.raw_bucket_name, key, str(file_path))
         except ClientError as e:
             logger.error("Failed to download file '{key}': {e}")
             raise RuntimeError(f"Failed to download file '{key}': {e}") from e
@@ -73,7 +74,7 @@ class StorageClient(BaseSettings):
         if not self.client:
             raise RuntimeError("Not connected to storage service. Call connect() first.")
         try:
-            self.client.upload_file(str(file_path), self.bucket_name, key)
+            self.client.upload_file(str(file_path), self.product_bucket_name, key)
         except ClientError as e:
             logger.error("Failed to upload file '{key}': {e}")
             raise RuntimeError(f"Failed to upload file '{key}': {e}") from e
