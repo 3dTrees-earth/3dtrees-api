@@ -202,14 +202,31 @@ class SupabaseClient(BaseSettings):
         if dataset_id is None and uuid is None:
             raise ValueError("Either dataset_id or uuid must be provided")
         
-        query = self.client.table(self.datasets_table).select("*")
+        # Get dataset with first dataset_item (for single-file datasets)
+        query = self.client.table("datasets").select("*, dataset_items:dataset_items(*)")
         if dataset_id is not None:
             query = query.eq("id", dataset_id)
         else:
             query = query.eq("uuid", uuid)
         
         response = query.execute()
-        return Dataset.model_validate(response.data[0])
+        dataset_data = response.data[0]
+        
+        # Extract bucket_path and file_name from first dataset_item
+        dataset_items = dataset_data.get("dataset_items", [])
+        bucket_path = dataset_items[0].get("bucket_path", "") if dataset_items else ""
+        file_name = dataset_items[0].get("file_name") if dataset_items else None
+        
+        # Create Dataset object with bucket_path and file_name from dataset_item
+        dataset_dict = {
+            **dataset_data,
+            "bucket_path": bucket_path,
+            "file_name": file_name,
+        }
+        # Remove dataset_items from the dict since it's not part of Dataset model
+        dataset_dict.pop("dataset_items", None)
+        
+        return Dataset.model_validate(dataset_dict)
 
     def get_datasets(self, user_id: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[Dataset]:
         if not self.client:
@@ -240,30 +257,60 @@ class SupabaseClient(BaseSettings):
             else:
                 raise RuntimeError(f"Failed to get datasets: {e}") from e
 
-    def create_dataset(self, bucket_path: str,acquisition_date: datetime, title: str = None, file_name: str = None, visibility: str = None) -> Dataset:
+    def create_dataset(self, bucket_path: str, acquisition_date: datetime, title: str = None, file_name: str = None, visibility: str = None) -> Dataset:
+        """Legacy method: Creates dataset and dataset_item. Note: bucket_path and file_name are now in dataset_items."""
         if not self.client:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
         
         user_id = self.get_current_user()["user"].id
 
-        response = self.client.table(self.datasets_table).insert({
+        # Create parent dataset record
+        dataset_response = self.client.table(self.datasets_table).insert({
             "uuid": str(uuid4()),
             "user_id": user_id,
-            "bucket_path": bucket_path,
             "acquisition_date": acquisition_date.isoformat(),
-            "title": title,
-            "file_name": file_name,
-            "visibility": visibility
+            "title": title or "Untitled Dataset",
+            "visibility": visibility or "private"
+        }).execute()
+        
+        dataset_id = dataset_response.data[0]["id"]
+        
+        # Create dataset_item record
+        self.client.table("dataset_items").insert({
+            "dataset_id": dataset_id,
+            "bucket_path": bucket_path,
+            "file_name": file_name
         }).execute()
 
-        return Dataset.model_validate(response.data[0])
+        # Return Dataset object with bucket_path and file_name
+        dataset_dict = {
+            **dataset_response.data[0],
+            "bucket_path": bucket_path,
+            "file_name": file_name,
+        }
+        
+        return Dataset.model_validate(dataset_dict)
 
     def create_workflow_invocation(self, workflow_uuid: str, dataset_id: int, workflow_name: str) -> WorkflowInvocation:
         if not self.client:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
         
+        # Get dataset_item_id from dataset_id (for single-file datasets, get first item)
+        dataset_item_resp = (
+            self.client.table("dataset_items")
+            .select("id")
+            .eq("dataset_id", dataset_id)
+            .limit(1)
+            .execute()
+        )
+        
+        if not dataset_item_resp.data:
+            raise ValueError(f"No dataset_item found for dataset_id {dataset_id}")
+        
+        dataset_item_id = dataset_item_resp.data[0]["id"]
+        
         response = self.client.table(self.invocations_table).insert({
-            "dataset_id": dataset_id,
+            "dataset_item_id": dataset_item_id,  # Updated: use dataset_item_id instead of dataset_id
             "invocation_id": workflow_uuid,
             "workflow_name": workflow_name,
             "status": "new",  # Galaxy state for newly created invocations
@@ -277,7 +324,12 @@ class SupabaseClient(BaseSettings):
             "parameters": {}, # Initialize as empty dict
         }).execute()
 
-        return WorkflowInvocation.model_validate(response.data[0])
+        # The response will have dataset_item_id, but WorkflowInvocation model expects dataset_id
+        # Map dataset_item_id back to dataset_id for backward compatibility
+        invocation_data = response.data[0]
+        invocation_data["dataset_id"] = dataset_id  # Keep dataset_id for model compatibility
+        
+        return WorkflowInvocation.model_validate(invocation_data)
     
     def get_workflow_invocations(self, status: Optional[str] = None, limit: int = 100, offset: int = 0, results_synced: Optional[bool] = None) -> List[WorkflowInvocation]:
         """
@@ -322,6 +374,7 @@ class SupabaseClient(BaseSettings):
     def get_workflow_invocations_by_dataset_id(self, dataset_id: int, limit: int = 100, offset: int = 0) -> List[WorkflowInvocation]:
         """
         Get workflow invocations for a specific dataset_id.
+        Note: This now queries by dataset_id but returns invocations that have dataset_item_id.
         
         Args:
             dataset_id: The dataset ID to filter by (as string)
@@ -338,10 +391,28 @@ class SupabaseClient(BaseSettings):
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
         
         try:
-            response = self.client.table(self.invocations_table).select("*").eq("dataset_id", dataset_id).order("created_at", desc=True).limit(limit).offset(offset).execute()
+            # Get dataset_item_ids for this dataset_id
+            dataset_items_resp = self.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).execute()
+            dataset_item_ids = [item["id"] for item in dataset_items_resp.data]
+            
+            if not dataset_item_ids:
+                return []
+            
+            # Query invocations by dataset_item_id
+            response = (
+                self.client.table(self.invocations_table)
+                .select("*")
+                .in_("dataset_item_id", dataset_item_ids)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .offset(offset)
+                .execute()
+            )
             
             invocations = []
             for invocation_data in response.data:
+                # Map dataset_item_id back to dataset_id for model compatibility
+                invocation_data["dataset_id"] = dataset_id
                 invocations.append(WorkflowInvocation.model_validate(invocation_data))
             
             logger.info(f"Retrieved {len(invocations)} workflow invocations for dataset {dataset_id}")
