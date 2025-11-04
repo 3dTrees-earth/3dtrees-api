@@ -32,6 +32,7 @@ class GalaxyClient(BaseSettings):
         cli_ignore_unknown_args=True,
         env_file = ".env",
         env_prefix = "GALAXY_",
+        extra="ignore",
     )
     
     def setup_user_with_bootstrap(self, email: Optional[str] = None, password: Optional[str] = None) -> bool:

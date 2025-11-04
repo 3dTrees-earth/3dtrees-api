@@ -39,6 +39,7 @@ class SupabaseClient(BaseSettings):
         cli_ignore_unknown_args=True,
         env_file=".env",
         env_prefix="SUPABASE_",
+        extra="ignore",
     )
     
     def connect(self) -> bool:
@@ -195,6 +196,31 @@ class SupabaseClient(BaseSettings):
             # Wrap unexpected exceptions with context
             raise RuntimeError(f"Sign out failed: {e}") from e
 
+    def get_dataset_item(self, dataset_item_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get a dataset_item by ID.
+        
+        Args:
+            dataset_item_id: ID of the dataset_item to retrieve
+            
+        Returns:
+            Dictionary with dataset_item data including id, bucket_path, file_name, dataset_id
+            
+        Raises:
+            RuntimeError: If not connected to Supabase
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            response = self.client.table("dataset_items").select("*").eq("id", dataset_item_id).execute()
+            if response.data:
+                return response.data[0]
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get dataset_item {dataset_item_id}: {e}")
+            return None
+
     def get_dataset(self, dataset_id: Optional[int] = None, uuid: Optional[str] = None) -> Dataset:
         if not self.client:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
@@ -310,7 +336,7 @@ class SupabaseClient(BaseSettings):
         dataset_item_id = dataset_item_resp.data[0]["id"]
         
         response = self.client.table(self.invocations_table).insert({
-            "dataset_item_id": dataset_item_id,  # Updated: use dataset_item_id instead of dataset_id
+            "dataset_item_id": dataset_item_id,
             "invocation_id": workflow_uuid,
             "workflow_name": workflow_name,
             "status": "new",  # Galaxy state for newly created invocations
@@ -324,12 +350,8 @@ class SupabaseClient(BaseSettings):
             "parameters": {}, # Initialize as empty dict
         }).execute()
 
-        # The response will have dataset_item_id, but WorkflowInvocation model expects dataset_id
-        # Map dataset_item_id back to dataset_id for backward compatibility
-        invocation_data = response.data[0]
-        invocation_data["dataset_id"] = dataset_id  # Keep dataset_id for model compatibility
-        
-        return WorkflowInvocation.model_validate(invocation_data)
+        # Return the invocation data directly - model now uses dataset_item_id
+        return WorkflowInvocation.model_validate(response.data[0])
     
     def get_workflow_invocations(self, status: Optional[str] = None, limit: int = 100, offset: int = 0, results_synced: Optional[bool] = None) -> List[WorkflowInvocation]:
         """
