@@ -253,10 +253,16 @@ def sync_results(galaxy_client: GalaxyClient, supabase_client: SupabaseClient, s
             logger.error(f"Invocation {invocation_id} not found in Supabase")
             return False
         
+        # Get dataset_item to access the dataset_id
+        dataset_item = supabase_client.get_dataset_item(supabase_inv.dataset_item_id)
+        if not dataset_item:
+            logger.error(f"Dataset item {supabase_inv.dataset_item_id} not found in Supabase")
+            return False
+        
         # Get dataset details to access UUID
-        supabase_dataset = supabase_client.get_dataset(supabase_inv.dataset_id)
+        supabase_dataset = supabase_client.get_dataset(dataset_item.dataset_id)
         if not supabase_dataset:
-            logger.error(f"Dataset {supabase_inv.dataset_id} not found in Supabase")
+            logger.error(f"Dataset {dataset_item.dataset_id} not found in Supabase")
             return False
         
         # Only sync if workflow is completed successfully
