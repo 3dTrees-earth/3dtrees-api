@@ -36,24 +36,34 @@ def storage_client() -> StorageClient:
 
 
 def _ensure_bucket_exists(storage_client: StorageClient) -> None:
-    """Ensure the required bucket exists, create if it doesn't."""
-    bucket_name = storage_client.bucket_name
+    """Ensure the required buckets exist, create if they don't (for local MinIO only)."""
+    # Check/create both raw and products buckets for two-bucket setup
+    buckets_to_check = [
+        storage_client.bucket_name_raw,
+        storage_client.bucket_name_products,
+        storage_client.bucket_name,  # Legacy single bucket for backward compatibility
+    ]
     
-    try:
-        # Check if bucket exists
-        storage_client.client.head_bucket(Bucket=bucket_name)
-        logger.info(f"✅ Bucket '{bucket_name}' already exists")
-        
-    except ClientError as e:
-        error_code = e.response['Error']['Code']
-        if error_code == '404':
-            # Bucket doesn't exist, create it
-            logger.info(f"Creating bucket '{bucket_name}'...")
-            storage_client.client.create_bucket(Bucket=bucket_name)
-            logger.info(f"✅ Bucket '{bucket_name}' created successfully")
-        else:
-            logger.error(f"❌ Error checking bucket: {e}")
-            raise RuntimeError(f"Failed to check bucket '{bucket_name}': {e}")
+    for bucket_name in buckets_to_check:
+        try:
+            # Check if bucket exists
+            storage_client.client.head_bucket(Bucket=bucket_name)
+            logger.info(f"✅ Bucket '{bucket_name}' already exists")
+            
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            if error_code == '404':
+                # Bucket doesn't exist, try to create it (only works for local MinIO with write access)
+                try:
+                    logger.info(f"Creating bucket '{bucket_name}'...")
+                    storage_client.client.create_bucket(Bucket=bucket_name)
+                    logger.info(f"✅ Bucket '{bucket_name}' created successfully")
+                except ClientError as create_error:
+                    logger.warning(f"Could not create bucket '{bucket_name}': {create_error}")
+                    logger.info(f"Assuming bucket will be created externally or using read-only access")
+            else:
+                logger.error(f"❌ Error checking bucket: {e}")
+                raise RuntimeError(f"Failed to check bucket '{bucket_name}': {e}")
 
 
 @pytest.fixture(scope="session")
@@ -89,13 +99,17 @@ def test_remote_file(storage_client: StorageClient, supabase_client: SupabaseCli
     if not file_path.exists():
         raise FileNotFoundError(f"Test file not found: {file_path}")
     
+    # Upload to RAW bucket (input data)
+    # Use bucket_name_raw to match production two-bucket setup
+    raw_bucket = storage_client.bucket_name_raw
+    
     # Check if file already exists in storage
-    if not _file_exists_in_storage(storage_client, key):
-        logger.info(f"Uploading test file to storage: {key}")
-        storage_client.upload_file(file_path, key)
-        logger.info(f"✅ File uploaded to storage: {key}")
+    if not _file_exists_in_storage(storage_client, key, raw_bucket):
+        logger.info(f"Uploading test file to RAW bucket ({raw_bucket}): {key}")
+        storage_client.upload_file(file_path, key, bucket=raw_bucket)
+        logger.info(f"✅ File uploaded to RAW bucket: {key}")
     else:
-        logger.info(f"✅ File already exists in storage: {key}")
+        logger.info(f"✅ File already exists in RAW bucket: {key}")
 
     # Check if dataset already exists in Supabase
     existing_dataset = _find_existing_dataset(supabase_client, key)
@@ -121,10 +135,11 @@ def test_remote_file(storage_client: StorageClient, supabase_client: SupabaseCli
     return dataset
 
 
-def _file_exists_in_storage(storage_client: StorageClient, key: str) -> bool:
+def _file_exists_in_storage(storage_client: StorageClient, key: str, bucket: Optional[str] = None) -> bool:
     """Check if a file exists in storage."""
+    bucket_name = bucket or storage_client.bucket_name
     try:
-        storage_client.client.head_object(Bucket=storage_client.bucket_name, Key=key)
+        storage_client.client.head_object(Bucket=bucket_name, Key=key)
         return True
     except ClientError as e:
         error_code = e.response['Error']['Code']
