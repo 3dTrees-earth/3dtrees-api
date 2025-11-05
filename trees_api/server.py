@@ -6,6 +6,7 @@ import logging
 import tempfile
 
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -13,6 +14,7 @@ from trees_api.galaxy_client import GalaxyClient
 from trees_api.supabase_client import SupabaseClient
 from trees_api.storage_client import StorageClient
 from trees_api.connection_manager import connection_manager
+from trees_api.upload_router import router as upload_router
 
 
 logger = logging.getLogger("uvicorn")
@@ -60,6 +62,18 @@ async def lifespan(app: FastAPI):
  
 
 app = FastAPI(title="3DTrees API", description="API for 3DTrees", lifespan=lifespan)
+
+# CORS configuration for local development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+
+# Register routers
+app.include_router(upload_router)
 
 # Pydantic models for request/response
 class JobCreateRequest(BaseModel):
@@ -222,6 +236,7 @@ class APIServerSettings(BaseSettings):
         cli_ignore_unknown_args=True,
         env_file=".env",
         env_prefix="API_SERVER_",
+        extra="ignore",
     )
 
 if __name__ == "__main__":
