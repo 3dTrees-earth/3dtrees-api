@@ -30,7 +30,6 @@ class GalaxyClient(BaseSettings):
         case_sensitive=False,
         cli_parse_args=True,
         cli_ignore_unknown_args=True,
-        env_file = ".env",
         env_prefix = "GALAXY_",
         extra="ignore",
     )
@@ -196,40 +195,24 @@ class GalaxyClient(BaseSettings):
         except Exception as e:
             logger.debug(f"Baseauth failed: {e}")
         
-        # If baseauth fails, try to create user
-        logger.debug(f"Attempting to create user {email}...")
+        # If baseauth fails, user might not exist or credentials are wrong
+        # Note: User creation is not automated - users must be created manually in Galaxy
+        # If user creation API returns 501 (not implemented), user likely exists but needs manual creation
+        logger.debug(f"Baseauth failed. User {email} may need to be created manually in Galaxy.")
+        logger.debug("Skipping automated user creation - users must be created manually.")
+        
+        # Try one more time in case user was just created manually
         try:
-            # Try to register the user
-            register_data = {
-                "email": email,
-                "password": password,
-                "username": email.split('@')[0],  # Use email prefix as username
-                "confirm": password
-            }
-            
-            response = requests.post(f"{self.url}/api/users", json=register_data)
-            if response.status_code in [200, 201]:
-                logger.info(f"User {email} created successfully")
-            elif response.status_code == 400:
-                # User might already exist, try login
-                logger.debug(f"User {email} might already exist, trying login...")
-            else:
-                raise RuntimeError(f"User creation failed with status {response.status_code}")
-            
-            # Now try to get API key again
             response = requests.get(f"{self.url}/api/authenticate/baseauth", headers=headers)
             if response.status_code == 200:
                 api_key = response.json().get('api_key')
                 if api_key:
                     logger.info(f"Successfully authenticated and got API key for {email}")
                     return api_key
-            
         except Exception as e:
-            if isinstance(e, RuntimeError):
-                raise
-            logger.debug(f"Error during user creation/login: {e}")
+            logger.debug(f"Final authentication attempt failed: {e}")
         
-        raise RuntimeError(f"Failed to authenticate user {email} and get API key")
+        raise RuntimeError(f"Failed to authenticate user {email}. Please ensure the user exists in Galaxy and credentials are correct.")
     
     def connect(self) -> bool:
         """
@@ -279,10 +262,11 @@ class GalaxyClient(BaseSettings):
             raise RuntimeError("Not connected to Galaxy. Call connect() first.")
 
         logger.debug(f"Searching for workflow with UUID: {workflow_uuid}")
+        # List workflows from Galaxy
         workflows = self.gi.workflows.list()
         
         for workflow in workflows:
-            if workflow.latest_workflow_uuid == workflow_uuid:
+            if hasattr(workflow, 'latest_workflow_uuid') and workflow.latest_workflow_uuid == workflow_uuid:
                 logger.info(f"Found workflow: {workflow.name} (ID: {workflow.id})")
                 return workflow
                 
@@ -310,6 +294,7 @@ class GalaxyClient(BaseSettings):
             raise RuntimeError("Not connected to Galaxy. Call connect() first.")
 
         logger.debug(f"Searching for workflow with name: {workflow_name}")
+        # List workflows from Galaxy
         workflows = self.gi.workflows.list()
         
         for workflow in workflows:
