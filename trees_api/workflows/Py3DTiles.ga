@@ -1,0 +1,82 @@
+{
+    "a_galaxy_workflow": "true",
+    "annotation": "Convert point cloud to 3D Tiles format",
+    "format-version": "0.1",
+    "name": "Py3DTiles",
+    "steps": {
+        "0": {
+            "annotation": "",
+            "content_id": null,
+            "errors": null,
+            "id": 0,
+            "input_connections": {},
+            "inputs": [
+                {
+                    "description": "",
+                    "name": "Input Point Cloud"
+                }
+            ],
+            "label": "Input Point Cloud",
+            "name": "Input dataset",
+            "outputs": [],
+            "position": {
+                "left": 0,
+                "top": 0
+            },
+            "tool_id": null,
+            "tool_state": "{\"optional\": false, \"tag\": null}",
+            "tool_version": null,
+            "type": "data_input",
+            "uuid": "f8b3c7d2-4e5a-4b8f-9c1d-2e3f4a5b6c7d",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "1": {
+            "annotation": "",
+            "content_id": "3dtrees_py3dtiles",
+            "errors": null,
+            "id": 1,
+            "input_connections": {
+                "input": {
+                    "id": 0,
+                    "output_name": "output"
+                }
+            },
+            "inputs": [],
+            "label": "3D Trees Py3DTiles Converter",
+            "name": "3D Trees Py3DTiles Converter",
+            "outputs": [
+                {
+                    "name": "tileset_json",
+                    "type": "json"
+                },
+                {
+                    "name": "tile_files",
+                    "type": "input"
+                }
+            ],
+            "position": {
+                "left": 300,
+                "top": 0
+            },
+            "post_job_actions": {},
+            "tool_id": "3dtrees_py3dtiles",
+            "tool_state": "{\"extra_fields\": \"\", \"input\": {\"__class__\": \"ConnectedValue\"}, \"overwrite\": false, \"srs_out\": \"4978\", \"__page__\": null, \"__rerun_remap_job_id__\": null}",
+            "tool_version": "1.0.0",
+            "type": "tool",
+            "uuid": "a2b4c6d8-3e5f-4a7b-8c9d-1e2f3a4b5c6d",
+            "when": null,
+            "workflow_outputs": [
+                {
+                    "label": "tileset_json",
+                    "output_name": "tileset_json",
+                    "uuid": "c3d5e7f9-2a4b-4c6d-8e9f-1a2b3c4d5e6f"
+                }
+            ]
+        }
+    },
+    "tags": [],
+    "uuid": "d4e6f8a0-1b3c-4d5e-7f8a-9b0c1d2e3f4a",
+    "version": 1
+}
+
