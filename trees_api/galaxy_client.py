@@ -528,10 +528,15 @@ class GalaxyClient(BaseSettings):
             
             logger.debug(f"Invoking workflow '{workflow.name}' (UUID: {workflow_uuid}) with inputs: {inputs}")
             
+            # Log parameters if present for debugging
+            if "parameters" in inputs:
+                logger.info(f"Workflow parameters: {inputs['parameters']}")
+            
             # Invoke the workflow
             invocation = workflow.invoke(
                 inputs=inputs,
-                history=history
+                history=history,
+                params=inputs.get("parameters")  # Pass parameters separately
             )
             
             logger.info(f"Successfully invoked workflow '{workflow.name}' (Invocation ID: {invocation.id})")
@@ -617,7 +622,7 @@ class GalaxyClient(BaseSettings):
         
         return inputs
     
-    def invoke_workflow_with_dataset(self, workflow_name: str, dataset_id: str, history_name: str = None) -> Dict[str, Any]:
+    def invoke_workflow_with_dataset(self, workflow_name: str, dataset_id: str, history_name: str = None, parameters: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Invoke a workflow with an existing dataset in Galaxy.
         
@@ -625,6 +630,7 @@ class GalaxyClient(BaseSettings):
             workflow_name: Name of the workflow to invoke
             dataset_id: ID of the dataset in Galaxy history
             history_name: Optional name for the history
+            parameters: Optional workflow step parameters (e.g., export path)
             
         Returns:
             Invocation data if successful
@@ -635,6 +641,10 @@ class GalaxyClient(BaseSettings):
         """
         # Prepare inputs for the workflow
         inputs = self.prepare_workflow_inputs(workflow_name, dataset_id)
+        
+        # Add parameters if provided (for setting step-specific values like export path)
+        if parameters:
+            inputs["parameters"] = parameters
         
         # Invoke workflow
         return self.invoke_workflow(workflow_name, inputs, history_name)
@@ -694,6 +704,110 @@ class GalaxyClient(BaseSettings):
         except Exception as e:
             raise RuntimeError(f"Failed to upload file '{file_path}': {e}") from e
     
+    @staticmethod
+    def build_file_source_uri(file_source_id: str, bucket_path: str) -> str:
+        """
+        Build a Galaxy file source URI.
+        
+        Args:
+            file_source_id: ID of the file source (e.g., "raw-storage", "products-storage")
+            bucket_path: Path within the bucket (e.g., "LAS/Example_Platane.laz")
+            
+        Returns:
+            Complete file source URI (e.g., "gxfiles://raw-storage/LAS/Example_Platane.laz")
+            
+        Example:
+            >>> uri = GalaxyClient.build_file_source_uri("raw-storage", "LAS/Example_Platane.laz")
+            >>> print(uri)
+            gxfiles://raw-storage/LAS/Example_Platane.laz
+        """
+        # Remove leading slash from bucket_path if present
+        bucket_path = bucket_path.lstrip('/')
+        return f"gxfiles://{file_source_id}/{bucket_path}"
+    
+    def import_from_file_source(self, history, file_source_uri: str, file_type: str = "auto"):
+        """
+        Import a file directly from Galaxy file source (S3/MinIO) into a history.
+        
+        This method allows Galaxy to read files directly from configured file sources
+        (like S3/MinIO) without downloading/uploading through the API server.
+        
+        Args:
+            history: History object to import into
+            file_source_uri: URI in format "gxfiles://file-source-id/path/to/file"
+                           Example: "gxfiles://raw-storage/LAS/Example_Platane.laz"
+            file_type: File type for Galaxy (default: "auto" for auto-detection)
+            
+        Returns:
+            Dataset object with .id attribute if successful
+            
+        Raises:
+            RuntimeError: If not connected to Galaxy
+            ValueError: If URI format is invalid
+            RuntimeError: If import fails
+            
+        Example:
+            >>> dataset = galaxy_client.import_from_file_source(
+            ...     history=history,
+            ...     file_source_uri="gxfiles://raw-storage/LAS/Example_Platane.laz"
+            ... )
+            >>> print(dataset.id)  # Use in workflow invocation
+        """
+        if not self.gi:
+            raise RuntimeError("Not connected to Galaxy. Call connect() first.")
+        
+        if not file_source_uri.startswith("gxfiles://"):
+            raise ValueError(
+                f"Invalid file source URI: {file_source_uri}. "
+                "Must start with 'gxfiles://' followed by file-source-id/path"
+            )
+        
+        try:
+            logger.info(f"Importing from file source: {file_source_uri}")
+            
+            # Use Galaxy's fetch API to import from file source
+            # POST /api/tools/fetch with targets containing the gxfiles:// URI
+            payload = {
+                "history_id": history.id,
+                "targets": [{
+                    "destination": {"type": "hdas"},
+                    "elements": [{
+                        "src": "url",
+                        "url": file_source_uri,
+                        "ext": file_type if file_type != "auto" else "auto"
+                    }]
+                }]
+            }
+            
+            # Use bioblend's make_post_request to call the API
+            url = f"{self.url}/api/tools/fetch"
+            response = self.gi.gi.make_post_request(url, payload)
+            
+            # Extract dataset from response
+            if not response or not isinstance(response, dict):
+                raise RuntimeError(f"Import failed: Invalid response from Galaxy: {response}")
+            
+            # The response should contain outputs
+            outputs = response.get('outputs', [])
+            if not outputs:
+                raise RuntimeError(f"Import failed: No outputs in response: {response}")
+            
+            dataset_info = outputs[0]
+            dataset_id = dataset_info.get('id')
+            if not dataset_id:
+                raise RuntimeError(f"Import failed: No dataset ID in response: {response}")
+            
+            # Get the full dataset object
+            dataset = self.gi.datasets.get(dataset_id)
+            logger.info(f"Imported dataset from file source: {dataset.name} (ID: {dataset.id})")
+            
+            return dataset
+            
+        except Exception as e:
+            if isinstance(e, (RuntimeError, ValueError)):
+                raise
+            raise RuntimeError(f"Failed to import from file source '{file_source_uri}': {e}") from e
+    
     def wait_for_upload(self, dataset, timeout: int = 300) -> bool:
         """
         Wait for a dataset upload to complete.
@@ -749,7 +863,7 @@ class GalaxyClient(BaseSettings):
         
         # Get invocations based on filters
         if invocation_ids:
-            # Get specific invocations by ID
+            # Get specific invocations by ID (same approach as status.py)
             invocations = []
             for inv_id in invocation_ids:
                 try:
@@ -773,13 +887,13 @@ class GalaxyClient(BaseSettings):
         # Convert to dictionaries with separated fields for efficient comparison
         invocation_data = []
         for inv in invocations:
-            # Extract jobs from steps
+            # Extract jobs from steps (same approach as status.py lines 203-212)
             jobs = []
             for step in getattr(inv, 'steps', []):
                 # Check if step has a job_id (for tool steps)
                 if hasattr(step, 'job_id') and step.job_id:
                     try:
-                        # Get the actual job status from Galaxy's job API
+                        # Get the actual job status from Galaxy's Objects job API
                         actual_job = self.gi.jobs.get(step.job_id)
                         job_state = actual_job.state
                     except Exception as e:
@@ -787,29 +901,24 @@ class GalaxyClient(BaseSettings):
                         logger.warning(f"Could not get job {step.job_id} status: {e}")
                         job_state = getattr(step, 'state', 'unknown')
                     
-                    # Create a job object with the actual job state
-                    job_data = {
+                    jobs.append({
                         'id': step.job_id,
                         'state': job_state,
-                        'step_id': getattr(step, 'id', None),
-                        'step_label': getattr(step, 'workflow_step_label', None)
-                    }
-                    jobs.append(job_data)
-                # Also check for jobs array (for steps that might have multiple jobs)
-                elif hasattr(step, 'jobs'):
-                    jobs.extend(getattr(step, 'jobs', []))
+                        'tool_id': getattr(step, 'tool_id', ''),
+                        'update_time': getattr(step, 'update_time', '')
+                    })
             
             invocation_data.append({
                 "id": inv.id,
                 "workflow_id": inv.workflow_id,
                 "state": inv.state,
-                "history_id": inv.history_id,
-                "update_time": inv.update_time,
+                "history_id": getattr(inv, 'history_id', None),
+                "update_time": getattr(inv, 'update_time', ''),
                 "steps": [self._serialize_step(step) for step in getattr(inv, 'steps', [])],
                 "inputs": getattr(inv, 'inputs', {}),
                 "outputs": getattr(inv, 'outputs', {}),
                 "output_collections": getattr(inv, 'output_collections', {}),
-                "jobs": [job.__dict__ if hasattr(job, '__dict__') else job for job in jobs],
+                "jobs": jobs,
                 "messages": getattr(inv, 'messages', [])
             })
         
