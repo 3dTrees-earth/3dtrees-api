@@ -1,6 +1,6 @@
 {
     "a_galaxy_workflow": "true",
-    "annotation": "Overviews workflow: Generate visualizations → Export to S3",
+    "annotation": "Overviews workflow: Generate visualizations → Export each output type to S3",
     "comments": [],
     "creator": [
         {
@@ -33,7 +33,7 @@
             "outputs": [],
             "position": {
                 "left": 0,
-                "top": 20
+                "top": 100
             },
             "tool_id": null,
             "tool_state": "{\"optional\": false, \"format\": [\"laz\", \"las\"], \"tag\": null}",
@@ -60,11 +60,11 @@
             "outputs": [
                 {
                     "name": "top_views",
-                    "type": "png"
+                    "type": "input"
                 },
                 {
                     "name": "section_views",
-                    "type": "png"
+                    "type": "input"
                 },
                 {
                     "name": "overview_round",
@@ -85,28 +85,18 @@
             "workflow_outputs": []
         },
         "2": {
-            "annotation": "Export overview images to S3 products bucket",
+            "annotation": "Export top view images collection to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 2,
             "input_connections": {
-                "export_type|infiles": [
-                    {
-                        "id": 1,
-                        "output_name": "top_views"
-                    },
-                    {
-                        "id": 1,
-                        "output_name": "section_views"
-                    },
-                    {
-                        "id": 1,
-                        "output_name": "overview_round"
-                    }
-                ]
+                "export_type|incollection": {
+                    "id": 1,
+                    "output_name": "top_views"
+                }
             },
             "inputs": [],
-            "label": "Export Overviews",
+            "label": "Export Top Views",
             "name": "Export datasets",
             "outputs": [
                 {
@@ -120,10 +110,76 @@
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "bdb435ac-2ba4-410e-9858-a737bc178e4e",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "3": {
+            "annotation": "Export section view images collection to S3",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 3,
+            "input_connections": {
+                "export_type|incollection": {
+                    "id": 1,
+                    "output_name": "section_views"
+                }
+            },
+            "inputs": [],
+            "label": "Export Section Views",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 528,
+                "top": 150
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "56a181dd-753c-4f77-9cb8-0d084543efc0",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "4": {
+            "annotation": "Export overview animation GIF to S3",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 4,
+            "input_connections": {
+                "export_type|infiles": {
+                    "id": 1,
+                    "output_name": "overview_round"
+                }
+            },
+            "inputs": [],
+            "label": "Export Overview GIF",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 528,
+                "top": 300
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
             "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
-            "uuid": "f012b5b3-005f-4d92-a9b0-b9e53ec9a075",
+            "uuid": "a5556adc-9dee-4874-aa62-d7957a5ab4cb",
             "when": null,
             "workflow_outputs": []
         }
@@ -134,5 +190,5 @@
         "S3Export"
     ],
     "uuid": "5e5b2233-4ac0-475e-90bf-a722c8f32608",
-    "version": 1
+    "version": 2
 }

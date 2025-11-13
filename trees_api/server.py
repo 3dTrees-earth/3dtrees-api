@@ -202,22 +202,28 @@ def create_job(
             logger.warning(f"Could not set export paths: {e}")
     
     elif workflow_name == "Overviews":
-        # Get dataset_item_id for constructing the export path
+        # Get dataset_item_id for constructing the export paths
         try:
             dataset_item_resp = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
             if dataset_item_resp.data:
                 dataset_item_id = dataset_item_resp.data[0]["id"]
-                # Set export directory for step 2 (export_remote tool)
+                # Set export directory for all 3 export steps
                 # Path structure matches runner: overviews/{dataset_id}/{dataset_item_id}/
                 export_path = f"gxfiles://products-storage/overviews/{dataset_id}/{dataset_item_id}/"
                 workflow_parameters = {
-                    "2": {  # Step ID of export_remote tool in Overviews.ga
+                    "2": {  # Step 2: Export top_views collection
+                        "d_uri": export_path
+                    },
+                    "3": {  # Step 3: Export section_views collection
+                        "d_uri": export_path
+                    },
+                    "4": {  # Step 4: Export overview_round GIF
                         "d_uri": export_path
                     }
                 }
-                logger.info(f"Export path for Overviews workflow: {export_path}")
+                logger.info(f"Export paths for Overviews workflow: {export_path}")
         except Exception as e:
-            logger.warning(f"Could not set export path: {e}")
+            logger.warning(f"Could not set export paths: {e}")
     
     # now invoke the workflow
     try:
