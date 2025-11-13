@@ -90,18 +90,20 @@
             "errors": null,
             "id": 2,
             "input_connections": {
-                "export_type|infiles": {
-                    "id": 1,
-                    "output_name": "top_views"
-                },
-                "export_type|infiles": {
-                    "id": 1,
-                    "output_name": "section_views"
-                },
-                "export_type|infiles": {
-                    "id": 1,
-                    "output_name": "overview_round"
-                }
+                "export_type|infiles": [
+                    {
+                        "id": 1,
+                        "output_name": "top_views"
+                    },
+                    {
+                        "id": 1,
+                        "output_name": "section_views"
+                    },
+                    {
+                        "id": 1,
+                        "output_name": "overview_round"
+                    }
+                ]
             },
             "inputs": [],
             "label": "Export Overviews",
@@ -121,7 +123,7 @@
             "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
-            "uuid": "a1b2c3d4-e5f6-4789-a012-overviews001",
+            "uuid": "f012b5b3-005f-4d92-a9b0-b9e53ec9a075",
             "when": null,
             "workflow_outputs": []
         }

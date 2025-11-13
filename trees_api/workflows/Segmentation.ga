@@ -156,18 +156,20 @@
             "errors": null,
             "id": 4,
             "input_connections": {
-                "export_type|infiles": {
-                    "id": 3,
-                    "output_name": "top_views"
-                },
-                "export_type|infiles": {
-                    "id": 3,
-                    "output_name": "section_views"
-                },
-                "export_type|infiles": {
-                    "id": 3,
-                    "output_name": "overview_round"
-                }
+                "export_type|infiles": [
+                    {
+                        "id": 3,
+                        "output_name": "top_views"
+                    },
+                    {
+                        "id": 3,
+                        "output_name": "section_views"
+                    },
+                    {
+                        "id": 3,
+                        "output_name": "overview_round"
+                    }
+                ]
             },
             "inputs": [],
             "label": "Export Overviews",
@@ -300,14 +302,16 @@
             "errors": null,
             "id": 8,
             "input_connections": {
-                "export_type|infiles": {
-                    "id": 7,
-                    "output_name": "tileset_json"
-                },
-                "export_type|infiles": {
-                    "id": 7,
-                    "output_name": "tile_files"
-                }
+                "export_type|infiles": [
+                    {
+                        "id": 7,
+                        "output_name": "tileset_json"
+                    },
+                    {
+                        "id": 7,
+                        "output_name": "tile_files"
+                    }
+                ]
             },
             "inputs": [],
             "label": "Export 3D Tiles",
