@@ -1,14 +1,16 @@
 """
 Test Standard (LAZ Standardization) workflow - End-to-End Test
 
-This test verifies the complete workflow:
+This test verifies the complete production workflow:
 1. Dataset exists in S3 (raw-storage bucket) and Supabase DB
 2. Call API endpoint to start workflow
 3. Galaxy imports directly from S3 using file sources (no download/upload)
-4. Monitor workflow status via Galaxy API
-5. Verify outputs in S3 products bucket
+4. Monitor workflow status via status.py poller (database-driven)
+5. Verify outputs in Supabase DB
+6. Verify exported files in S3 products bucket
 
-Fast test for debugging workflow status (~30 seconds)
+This test simulates the actual production flow where status.py cronjob
+polls Galaxy and updates the Supabase database (~30 seconds)
 """
 import logging
 import time
@@ -34,14 +36,16 @@ def test_standard_workflow(
     """
     End-to-End test for Standard (LAZ Standardization) workflow.
     
-    Flow:
+    Production-like flow:
     1. Dataset already exists in S3 (raw-storage) and Supabase (via test_remote_file fixture)
     2. Call API endpoint /jobs to start workflow
     3. API imports file from S3 using Galaxy file sources (no download/upload)
-    4. Monitor workflow status via Galaxy API
-    5. Verify results in S3 products bucket
+    4. Monitor workflow status via status.py poller → updates Supabase DB
+    5. Check workflow completion via database (not Galaxy directly)
+    6. Verify results in S3 products bucket
     
-    This is the fastest workflow test (~30s) and useful for debugging.
+    This test simulates the actual production flow where the status.py cronjob
+    continuously syncs Galaxy status to the database (~30s).
     """
     logger.info("🧪 Testing Standard workflow (End-to-End)")
     
@@ -79,53 +83,49 @@ def test_standard_workflow(
     except requests.exceptions.RequestException as e:
         pytest.fail(f"API call failed: {e}")
     
-    # Step 3: Monitor workflow status using Galaxy API (same logic as status.py)
-    logger.info("⏳ Monitoring workflow status...")
+    # Step 3: Monitor workflow status using status.py poller (production-like)
+    logger.info("⏳ Monitoring workflow status via status.py poller...")
     max_attempts = 12  # 12 × 5 seconds = 1 minute
     workflow_finished = False
     final_status = None
-    galaxy_inv = None
+    supabase_inv = None
     
     for attempt in range(max_attempts):
         time.sleep(5)
         
         try:
-            # Get invocation from Galaxy (same method as status.py)
-            galaxy_invocations = galaxy_client.get_workflow_invocations(invocation_ids=[invocation_id])
+            # Run status sync (simulates the cronjob)
+            from trees_api.status import sync_workflow_statuses
+            sync_workflow_statuses(galaxy_client, supabase_client)
             
-            if not galaxy_invocations:
-                logger.warning(f"Attempt {attempt + 1}/{max_attempts}: Invocation not found")
+            # Check Supabase DB for updated status (production approach)
+            supabase_inv = supabase_client.get_workflow_invocation_by_id(invocation_id)
+            
+            if not supabase_inv:
+                logger.warning(f"Attempt {attempt + 1}/{max_attempts}: Invocation not found in DB")
                 continue
             
-            galaxy_inv = galaxy_invocations[0]
-            current_status = galaxy_inv['state']
-            jobs = galaxy_inv.get('jobs', [])
+            current_status = supabase_inv.status
+            jobs = supabase_inv.jobs or []
             
             logger.info(f"Attempt {attempt + 1}/{max_attempts}: status={current_status}, jobs={len(jobs)}")
             
-            # Check completion using status.py logic
-            # First check: workflow invocation is in terminal state
-            if current_status in ['ok', 'success', 'error', 'failed', 'cancelled', 'deleted', 'discarded', 'warning']:
+            # Check if finished (using same logic as status.py)
+            if current_status in ['ok', 'success', 'error', 'failed', 'cancelled']:
                 workflow_finished = True
                 final_status = current_status
                 logger.info(f"✅ Workflow reached terminal state: {final_status}")
                 break
             
-            # Second check: all individual jobs are in terminal states
+            # Check if all jobs finished (even if workflow status is 'scheduled')
             elif jobs:
-                all_jobs_finished = True
-                all_jobs_successful = True
-                for job in jobs:
-                    job_state = job.get('state', '')
-                    if job_state not in ['ok', 'error', 'failed', 'cancelled']:
-                        all_jobs_finished = False
-                        all_jobs_successful = False
-                        break
-                    if job_state != 'ok':
-                        all_jobs_successful = False
-                
+                all_jobs_finished = all(
+                    job.get('state') in ['ok', 'error', 'failed', 'cancelled'] 
+                    for job in jobs
+                )
                 if all_jobs_finished:
                     workflow_finished = True
+                    all_jobs_successful = all(job.get('state') == 'ok' for job in jobs)
                     final_status = 'ok' if all_jobs_successful else 'error'
                     logger.info(f"✅ All jobs completed: {final_status}")
                     break
@@ -133,7 +133,7 @@ def test_standard_workflow(
         except Exception as e:
             if "AssertionError" in str(type(e).__name__):
                 raise
-            logger.warning(f"Error checking workflow status: {e}")
+            logger.warning(f"Error in status sync: {e}")
             continue
     
     # Step 4: Verify workflow completed successfully
@@ -142,26 +142,19 @@ def test_standard_workflow(
     
     assert final_status in ['ok', 'success'], f"Workflow failed with status: {final_status}"
     
-    # Step 5: Verify outputs exist
-    outputs = galaxy_inv.get('outputs', {})
-    logger.info(f"📦 Workflow produced {len(outputs)} outputs")
+    # Step 5: Verify outputs exist in DB
+    outputs = supabase_inv.outputs or {}
+    logger.info(f"📦 Workflow produced {len(outputs)} outputs (from DB)")
     
     if not outputs:
-        logger.warning("⚠️ No outputs found in Galaxy invocation")
+        logger.warning("⚠️ No outputs found in Supabase")
     else:
         logger.info(f"✅ Output keys: {list(outputs.keys())}")
     
-    # Step 6: Verify invocation exists in Supabase
-    # Note: The full status sync is done by the status.py cronjob
-    try:
-        invocations = supabase_client.get_workflow_invocations(limit=10)
-        matching = [inv for inv in invocations if inv.invocation_id == invocation_id]
-        if matching:
-            logger.info(f"📊 Supabase status: {matching[0].status}")
-        else:
-            logger.info(f"📊 Invocation created in Supabase (status sync pending)")
-    except Exception as e:
-        logger.warning(f"⚠️ Could not verify Supabase status: {e}")
+    # Step 6: Verify invocation details in Supabase
+    logger.info(f"📊 Supabase status: {supabase_inv.status}")
+    logger.info(f"📊 Finished at: {supabase_inv.finished_at}")
+    logger.info(f"📊 Jobs count: {len(supabase_inv.jobs or [])}")
     
     # Step 7: Verify file was exported to S3/MinIO products bucket
     logger.info("🔍 Verifying export to S3 products bucket...")
