@@ -201,6 +201,24 @@ def create_job(
         except Exception as e:
             logger.warning(f"Could not set export paths: {e}")
     
+    elif workflow_name == "Overviews":
+        # Get dataset_item_id for constructing the export path
+        try:
+            dataset_item_resp = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
+            if dataset_item_resp.data:
+                dataset_item_id = dataset_item_resp.data[0]["id"]
+                # Set export directory for step 2 (export_remote tool)
+                # Path structure matches runner: overviews/{dataset_id}/{dataset_item_id}/
+                export_path = f"gxfiles://products-storage/overviews/{dataset_id}/{dataset_item_id}/"
+                workflow_parameters = {
+                    "2": {  # Step ID of export_remote tool in Overviews.ga
+                        "d_uri": export_path
+                    }
+                }
+                logger.info(f"Export path for Overviews workflow: {export_path}")
+        except Exception as e:
+            logger.warning(f"Could not set export path: {e}")
+    
     # now invoke the workflow
     try:
         invocation_result = galaxy.invoke_workflow_with_dataset(
