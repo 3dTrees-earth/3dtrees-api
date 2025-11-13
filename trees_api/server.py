@@ -175,6 +175,32 @@ def create_job(
         except Exception as e:
             logger.warning(f"Could not set export path: {e}")
     
+    elif workflow_name == "Segmentation":
+        # Get dataset_item_id for constructing the export paths
+        try:
+            dataset_item_resp = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
+            if dataset_item_resp.data:
+                dataset_item_id = dataset_item_resp.data[0]["id"]
+                # Set export directories for all 4 export steps
+                # Path structure matches runner
+                workflow_parameters = {
+                    "2": {  # Step 2: Export standardized LAZ
+                        "d_uri": f"gxfiles://products-storage/standard/{dataset_id}/{dataset_item_id}/"
+                    },
+                    "4": {  # Step 4: Export overviews
+                        "d_uri": f"gxfiles://products-storage/overviews/{dataset_id}/{dataset_item_id}/"
+                    },
+                    "6": {  # Step 6: Export segmentation
+                        "d_uri": f"gxfiles://products-storage/segmentation/{dataset_id}/{dataset_item_id}/"
+                    },
+                    "8": {  # Step 8: Export 3dtiles
+                        "d_uri": f"gxfiles://products-storage/3dtiles/{dataset_id}/{dataset_item_id}/"
+                    }
+                }
+                logger.info(f"Export paths configured for Segmentation workflow")
+        except Exception as e:
+            logger.warning(f"Could not set export paths: {e}")
+    
     # now invoke the workflow
     try:
         invocation_result = galaxy.invoke_workflow_with_dataset(
