@@ -1,9 +1,7 @@
 import os
 from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
-from pathlib import Path
 import logging
-import tempfile
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -142,22 +140,48 @@ def create_job(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Loading Workflow {workflow_name} and history failed: {e} ")
     
-    # development implementation: first download the dataset from s3
+    # Import dataset directly from S3/MinIO using Galaxy file sources
     try:
         database_dataset = supabase.get_dataset(dataset_id)
-        with tempfile.NamedTemporaryFile(suffix=".laz") as temp_file:
-            storage.download_file(database_dataset.bucket_path, temp_file.name)
-            dataset = galaxy.upload_file(history, Path(temp_file.name))
-            galaxy.wait_for_upload(dataset)
+        
+        # Construct file source URI using helper method
+        # bucket_path is like "LAS/Example_Platane.laz"
+        file_source_uri = galaxy.build_file_source_uri("raw-storage", database_dataset.bucket_path)
+        
+        logger.info(f"Importing dataset from file source: {file_source_uri}")
+        dataset = galaxy.import_from_file_source(history, file_source_uri)
+        galaxy.wait_for_upload(dataset)  # Wait for import to complete
+        
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Downloading dataset {dataset_id} failed: {e} ")
+        raise HTTPException(status_code=400, detail=f"Importing dataset {dataset_id} from file source failed: {e}")
+    
+    # Prepare workflow parameters (e.g., export path for Standard workflow)
+    workflow_parameters = {}
+    if workflow_name == "Standard":
+        # Get dataset_item_id for constructing the export path
+        try:
+            dataset_item_resp = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
+            if dataset_item_resp.data:
+                dataset_item_id = dataset_item_resp.data[0]["id"]
+                # Set export directory for step 2 (export_remote tool)
+                # Path structure matches runner: standard/{dataset_id}/{dataset_item_id}/
+                export_path = f"gxfiles://products-storage/standard/{dataset_id}/{dataset_item_id}/"
+                workflow_parameters = {
+                    "2": {  # Step ID of export_remote tool in Standard.ga
+                        "d_uri": export_path
+                    }
+                }
+                logger.info(f"Export path for Standard workflow: {export_path}")
+        except Exception as e:
+            logger.warning(f"Could not set export path: {e}")
     
     # now invoke the workflow
     try:
         invocation_result = galaxy.invoke_workflow_with_dataset(
             workflow_name=workflow_name,
             dataset_id=dataset.id,
-            history_name=history_name
+            history_name=history_name,
+            parameters=workflow_parameters if workflow_parameters else None
         )
         print(invocation_result)
     except Exception as e:
