@@ -1,0 +1,130 @@
+{
+    "a_galaxy_workflow": "true",
+    "annotation": "Standardize LAZ files and export to S3",
+    "comments": [],
+    "creator": [
+        {
+            "class": "Person",
+            "identifier": "0000-0002-0424-2651",
+            "name": "Mirko Mälicke"
+        }
+    ],
+    "format-version": "0.1",
+    "license": "CC-BY-4.0",
+    "name": "Standard",
+    "report": {
+        "markdown": "\n# Workflow Execution Report\n\n## Workflow Inputs\n```galaxy\ninvocation_inputs()\n```\n\n## Workflow Outputs\n```galaxy\ninvocation_outputs()\n```\n\n## Workflow\n```galaxy\nworkflow_display()\n```\n"
+    },
+    "steps": {
+        "0": {
+            "annotation": "",
+            "content_id": null,
+            "errors": null,
+            "id": 0,
+            "input_connections": {},
+            "inputs": [
+                {
+                    "description": "",
+                    "name": "LAS / LAZ File"
+                }
+            ],
+            "label": "LAS / LAZ File",
+            "name": "Input dataset",
+            "outputs": [],
+            "position": {
+                "left": 0,
+                "top": 20
+            },
+            "tool_id": null,
+            "tool_state": "{\"optional\": false, \"format\": [\"laz\", \"las\"], \"tag\": null}",
+            "tool_version": null,
+            "type": "data_input",
+            "uuid": "5b5c7c3d-3f85-4add-af22-f7e7bf2c4454",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "1": {
+            "annotation": "",
+            "content_id": "3dtrees_standard",
+            "errors": null,
+            "id": 1,
+            "input_connections": {
+                "input": {
+                    "id": 0,
+                    "output_name": "output"
+                }
+            },
+            "inputs": [],
+            "label": "3DTrees LAS/LAZ Standardization",
+            "name": "3DTrees LAS/LAZ Standardization",
+            "outputs": [
+                {
+                    "name": "pc_standardized",
+                    "type": "binary"
+                }
+            ],
+            "position": {
+                "left": 280,
+                "top": 20
+            },
+            "post_job_actions": {},
+            "tool_id": "3dtrees_standard",
+            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}}",
+            "tool_version": "1.0.0",
+            "type": "tool",
+            "uuid": "dff3ef6d-ddfd-4645-8f2b-32ce0732ba67",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "2": {
+            "annotation": "Export standardized file to S3 products bucket",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 2,
+            "input_connections": {
+                "export_type|infiles": {
+                    "id": 1,
+                    "output_name": "pc_standardized"
+                }
+            },
+            "inputs": [],
+            "label": "Export to S3",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 560,
+                "top": 20
+            },
+            "post_job_actions": {
+                "ChangeDatatypeActionpc_standardized": {
+                    "action_arguments": {
+                        "newtype": "laz"
+                    },
+                    "action_type": "ChangeDatatypeAction",
+                    "output_name": "pc_standardized"
+                }
+            },
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "a1b2c3d4-e5f6-4789-a012-3456789abcde",
+            "when": null,
+            "workflow_outputs": [
+                {
+                    "label": "export_logs",
+                    "output_name": "out",
+                    "uuid": "e5f6a7b8-c9d0-4e12-b345-6789abcdef01"
+                }
+            ]
+        }
+    },
+    "tags": [],
+    "uuid": "f7b05dcf-25d7-4546-bcf5-1f29cdb4c180",
+    "version": 2
+}
