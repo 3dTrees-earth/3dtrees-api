@@ -86,10 +86,11 @@ def test_overviews_workflow(
     
     # Step 3: Monitor workflow status using status.py poller (production-like)
     logger.info("⏳ Monitoring workflow status via status.py poller...")
-    max_attempts = 24  # 24 × 5 seconds = 2 minutes max for overviews
+    max_attempts = 60  # 60 × 5 seconds = 5 minutes (allows for backfill delays)
     workflow_finished = False
     final_status = None
     supabase_inv = None
+    expected_jobs = 4  # Overviews workflow: 1 tool + 3 exports
     
     for attempt in range(max_attempts):
         time.sleep(5)
@@ -109,7 +110,14 @@ def test_overviews_workflow(
             current_status = supabase_inv.status
             jobs = supabase_inv.jobs or []
             
-            logger.info(f"Attempt {attempt + 1}/{max_attempts}: status={current_status}, jobs={len(jobs)}")
+            # Count job states
+            job_states = {}
+            for job in jobs:
+                state = job.get('state', 'unknown')
+                job_states[state] = job_states.get(state, 0) + 1
+            
+            job_summary = ', '.join([f"{state}={count}" for state, count in job_states.items()]) if job_states else "no jobs"
+            logger.info(f"Attempt {attempt + 1}/{max_attempts}: status={current_status}, jobs={len(jobs)}/{expected_jobs} ({job_summary})")
             
             # Check if finished (using same logic as status.py)
             if current_status in ['ok', 'success', 'error', 'failed', 'cancelled']:
@@ -118,8 +126,8 @@ def test_overviews_workflow(
                 logger.info(f"✅ Workflow reached terminal state: {final_status}")
                 break
             
-            # Check if all jobs finished (even if workflow status is 'scheduled')
-            elif jobs:
+            # Check if we have all expected jobs and they're all finished
+            elif len(jobs) >= expected_jobs:
                 all_jobs_finished = all(
                     job.get('state') in ['ok', 'error', 'failed', 'cancelled'] 
                     for job in jobs
@@ -128,7 +136,7 @@ def test_overviews_workflow(
                     workflow_finished = True
                     all_jobs_successful = all(job.get('state') == 'ok' for job in jobs)
                     final_status = 'ok' if all_jobs_successful else 'error'
-                    logger.info(f"✅ All jobs completed: {final_status}")
+                    logger.info(f"✅ All {len(jobs)} jobs completed: {final_status}")
                     break
         
         except Exception as e:
@@ -139,7 +147,9 @@ def test_overviews_workflow(
     
     # Step 4: Verify workflow completed successfully
     if not workflow_finished:
-        pytest.fail(f"Workflow did not complete within {max_attempts * 5} seconds")
+        timeout_mins = (max_attempts * 5) // 60
+        last_state = f"status={current_status}, jobs={len(jobs)}/{expected_jobs}" if supabase_inv else "no data"
+        pytest.fail(f"Workflow did not complete within {timeout_mins} minutes (last state: {last_state})")
     
     assert final_status in ['ok', 'success'], f"Workflow failed with status: {final_status}"
     
@@ -157,58 +167,70 @@ def test_overviews_workflow(
     logger.info(f"📊 Finished at: {supabase_inv.finished_at}")
     logger.info(f"📊 Jobs count: {len(supabase_inv.jobs or [])}")
     
-    # Step 7: Verify exported overview images in S3/MinIO products bucket
-    logger.info("🔍 Verifying exported overview images in S3 products bucket...")
+    # Step 7: Verify ALL expected outputs in S3/MinIO products bucket
+    logger.info("🔍 Verifying ALL expected outputs in S3 products bucket...")
     
+    # Get dataset_item_id to construct actual export path
     try:
-        # Get dataset_item_id to construct expected S3 path
         dataset_item_resp = supabase_client.client.table("dataset_items").select("id").eq("dataset_id", test_remote_file.id).limit(1).execute()
         if not dataset_item_resp.data:
-            logger.warning("⚠️ Could not get dataset_item_id for S3 verification")
-        else:
-            dataset_item_id = dataset_item_resp.data[0]["id"]
-            overview_prefix = f"overviews/{test_remote_file.id}/{dataset_item_id}/"
-            
-            logger.info(f"📂 Checking overview files at: {overview_prefix}")
-            try:
-                response = storage_client.client.list_objects_v2(
-                    Bucket="3dtrees-tool-products",
-                    Prefix=overview_prefix
-                )
-                
-                if 'Contents' in response and len(response['Contents']) > 0:
-                    overview_files = [obj['Key'] for obj in response['Contents']]
-                    logger.info(f"✅ Overview export: {len(overview_files)} files found")
-                    
-                    # List all files
-                    for file_key in overview_files:
-                        file_size = next((obj['Size'] for obj in response['Contents'] if obj['Key'] == file_key), 0)
-                        logger.info(f"   - {file_key} ({file_size} bytes)")
-                    
-                    # Verify at least some expected files exist
-                    has_images = any('.png' in f or '.gif' in f for f in overview_files)
-                    if has_images:
-                        logger.info("✅ Found image files (PNG/GIF)")
-                    else:
-                        logger.warning("⚠️ No image files found")
-                    
-                    # Verify all files are non-empty
-                    all_non_empty = all(
-                        obj.get('Size', 0) > 0 
-                        for obj in response['Contents']
-                    )
-                    if all_non_empty:
-                        logger.info("✅ All exported files are non-empty")
-                    else:
-                        logger.warning("⚠️ Some exported files are empty")
-                else:
-                    logger.warning(f"⚠️ No overview files found at {overview_prefix}")
-            
-            except Exception as e:
-                logger.warning(f"⚠️ Could not verify overview files: {e}")
-    
+            pytest.fail(f"Could not get dataset_item_id for dataset {test_remote_file.id}")
+        dataset_item_id = dataset_item_resp.data[0]["id"]
     except Exception as e:
-        logger.warning(f"⚠️ Export verification failed: {e}")
+        pytest.fail(f"Error getting dataset_item_id: {e}")
+    
+    # Define all expected outputs for the Overviews workflow
+    # Path structure: overviews/{dataset_id}/{dataset_item_id}/{filename}
+    # NOTE: Galaxy's export_remote adds .{extension} to collection elements, causing double extensions
+    dataset_id = str(test_remote_file.id)
+    export_base_path = f"overviews/{dataset_id}/{dataset_item_id}"
+    
+    expected_outputs = {
+        'top_view_00.png.png': 'Top view perspective 0°',  # Note: double .png from Galaxy export
+        'top_view_01.png.png': 'Top view perspective 180°',
+        'section_ew.png.png': 'East-West section view',
+        'section_ns.png.png': 'North-South section view',
+        'Overview Animation.gif': 'Rotating overview animation',  # Note: Label name, not file name
+    }
+    
+    missing_outputs = []
+    found_outputs = []
+    
+    for output_name, description in expected_outputs.items():
+        # Construct the full S3 key
+        s3_key = f"{export_base_path}/{output_name}"
+        
+        try:
+            # Check if file exists in products-storage bucket using direct S3 API
+            response = storage_client.client.list_objects_v2(
+                Bucket='3dtrees-tool-products',
+                Prefix=s3_key,
+                MaxKeys=1
+            )
+            
+            if 'Contents' in response and len(response['Contents']) > 0:
+                found_outputs.append(output_name)
+                logger.info(f"  ✅ {output_name}: {description}")
+            else:
+                missing_outputs.append(output_name)
+                logger.error(f"  ❌ {output_name}: NOT FOUND at {s3_key}")
+        
+        except Exception as e:
+            missing_outputs.append(output_name)
+            logger.error(f"  ❌ {output_name}: ERROR checking - {e}")
+    
+    # CRITICAL ASSERTION: All outputs must be present
+    if missing_outputs:
+        error_msg = (
+            f"\n❌ FAILED: Missing {len(missing_outputs)}/{len(expected_outputs)} expected outputs!\n"
+            f"   Expected path: {export_base_path}/\n"
+            f"   Missing: {missing_outputs}\n"
+            f"   Found: {found_outputs}\n"
+            f"   This indicates that not all export jobs completed successfully."
+        )
+        pytest.fail(error_msg)
+    
+    logger.info(f"✅ All {len(expected_outputs)} expected outputs verified in S3!")
     
     logger.info("✅ Overviews workflow End-to-End test PASSED!")
 
