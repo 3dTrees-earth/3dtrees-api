@@ -131,7 +131,7 @@ def create_job(
         raise HTTPException(status_code=503, detail="Supabase service is unavailable. Please check /health for details.")
     if not storage:
         raise HTTPException(status_code=503, detail="Storage service is unavailable. Please check /health for details.")
-    workflow_name = workflow_name.capitalize()
+    # Don't capitalize - workflow names must match exactly (e.g., "Py3DTiles" not "Py3dtiles")
     history_name = f"{workflow_name} - {dataset_id}"
     # make sure the requested workflow exists in galaxy
     try:
