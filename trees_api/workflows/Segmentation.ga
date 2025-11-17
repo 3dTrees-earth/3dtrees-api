@@ -39,7 +39,7 @@
             "tool_state": "{\"optional\": false, \"format\": [\"laz\", \"las\"], \"tag\": null}",
             "tool_version": null,
             "type": "data_input",
-            "uuid": "c8d9e0f1-2a3b-4c5d-6e7f-8a9b0c1d2e3f",
+            "uuid": "3968c333-5a03-4a92-9119-c2acfd35552a",
             "when": null,
             "workflow_outputs": []
         },
@@ -70,9 +70,9 @@
             "post_job_actions": {},
             "tool_id": "3dtrees_segmentanytree",
             "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"log_file\": false}",
-            "tool_version": "1.1.0+galaxy1",
+            "tool_version": "1.1.0+galaxy7",
             "type": "tool",
-            "uuid": "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+            "uuid": "1043fe35-964d-4baa-bee1-6c10fc690bce",
             "when": null,
             "workflow_outputs": []
         },
@@ -105,19 +105,19 @@
             "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
-            "uuid": "b2c3d4e5-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
+            "uuid": "5280675f-5db6-485d-8830-8f8af81a297e",
             "when": null,
             "workflow_outputs": [
                 {
                     "label": "export_logs",
                     "output_name": "out",
-                    "uuid": "c3d4e5f6-7a8b-9c0d-1e2f-3a4b5c6d7e8f"
+                    "uuid": "64096090-7fe1-4c6e-a8bd-714965123a5e"
                 }
             ]
         }
     },
     "tags": ["3DTrees", "Segmentation", "SegmentAnyTree", "S3Export"],
-    "uuid": "d4e5f6a7-8b9c-0d1e-2f3a-4b5c6d7e8f9a",
+    "uuid": "bddd8cb6-583b-45a4-a077-f0a601542349",
     "version": 1
 }
 

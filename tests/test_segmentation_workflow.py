@@ -148,14 +148,14 @@ def test_segmentation_workflow(
     # Step 5: Check for GPU errors (fail hard - no skip for production test)
     if final_status in ['error', 'failed']:
         logger.error("❌ Workflow failed - checking for GPU errors...")
-    
-    # Check jobs for GPU-related errors
+        
+        # Check jobs for GPU-related errors
         gpu_error_found = False
         for job in supabase_inv.jobs or []:
-        job_state = job.get('state')
+            job_state = job.get('state')
             if job_state in ['error', 'failed']:
                 # If segmentation job failed, assume GPU issue
-        job_tool_id = job.get('tool_id', '')
+                job_tool_id = job.get('tool_id', '')
                 if 'segmentanytree' in job_tool_id.lower():
                     gpu_error_found = True
                     logger.error("❌ SegmentAnyTree job failed - GPU likely unavailable")

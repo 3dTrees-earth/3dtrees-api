@@ -48,19 +48,10 @@ class SupabaseClient(BaseSettings):
         try:
             logger.debug(f"Connecting to Supabase at {self.url}...")
             
-            # Create client options
-            options = ClientOptions(
-                schema="public",
-                headers={
-                    "X-Client-Info": "3dtrees-api/0.1.0"
-                }
-            )
-            
-            # Create Supabase client
+            # Create Supabase client (simplified - newer supabase-py doesn't require ClientOptions)
             self.client = create_client(
                 supabase_url=self.url,
-                supabase_key=self.key,
-                options=options
+                supabase_key=self.key
             )
             
             # Test connection by getting user info (if authenticated)
