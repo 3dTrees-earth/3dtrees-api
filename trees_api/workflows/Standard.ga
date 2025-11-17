@@ -70,7 +70,7 @@
             "post_job_actions": {},
             "tool_id": "3dtrees_standard",
             "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}}",
-            "tool_version": "1.0.0",
+            "tool_version": "1.0.1",
             "type": "tool",
             "uuid": "dff3ef6d-ddfd-4645-8f2b-32ce0732ba67",
             "when": null,

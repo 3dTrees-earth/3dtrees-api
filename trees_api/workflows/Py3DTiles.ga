@@ -1,6 +1,6 @@
 {
     "a_galaxy_workflow": "true",
-    "annotation": "Convert point cloud to 3D Tiles format",
+    "annotation": "Convert point cloud to 3D Tiles format and export to S3 with proper directory structure",
     "format-version": "0.1",
     "name": "Py3DTiles",
     "steps": {
@@ -32,7 +32,7 @@
             "workflow_outputs": []
         },
         "1": {
-            "annotation": "",
+            "annotation": "Convert point cloud to 3D Tiles format",
             "content_id": "3dtrees_py3dtiles",
             "errors": null,
             "id": 1,
@@ -51,8 +51,12 @@
                     "type": "json"
                 },
                 {
-                    "name": "tile_files",
-                    "type": "input"
+                    "name": "preview_pnts",
+                    "type": "pnts"
+                },
+                {
+                    "name": "points_tiles",
+                    "type": "collection"
                 }
             ],
             "position": {
@@ -62,7 +66,7 @@
             "post_job_actions": {},
             "tool_id": "3dtrees_py3dtiles",
             "tool_state": "{\"extra_fields\": \"\", \"input\": {\"__class__\": \"ConnectedValue\"}, \"overwrite\": false, \"srs_out\": \"4978\", \"__page__\": null, \"__rerun_remap_job_id__\": null}",
-            "tool_version": "1.0.0",
+            "tool_version": "1.0.4",
             "type": "tool",
             "uuid": "a2b4c6d8-3e5f-4a7b-8c9d-1e2f3a4b5c6d",
             "when": null,
@@ -73,10 +77,93 @@
                     "uuid": "c3d5e7f9-2a4b-4c6d-8e9f-1a2b3c4d5e6f"
                 }
             ]
+        },
+        "2": {
+            "annotation": "Export tileset.json to S3 root",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 2,
+            "input_connections": {
+                "export_type|infiles": {
+                    "id": 1,
+                    "output_name": "tileset_json"
+                }
+            },
+            "inputs": [],
+            "label": "Export Tileset JSON",
+            "name": "Export to remote files source",
+            "outputs": [],
+            "position": {
+                "left": 600,
+                "top": 0
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "b63b2042-6369-40eb-90b8-d6653f0826dd",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "3": {
+            "annotation": "Export preview.pnts to S3 root",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 3,
+            "input_connections": {
+                "export_type|infiles": {
+                    "id": 1,
+                    "output_name": "preview_pnts"
+                }
+            },
+            "inputs": [],
+            "label": "Export Preview PNTS",
+            "name": "Export to remote files source",
+            "outputs": [],
+            "position": {
+                "left": 600,
+                "top": 100
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "e5f7a9b2-6c8d-4e0f-9a3b-4c5d6e7f8a9b",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "4": {
+            "annotation": "Export points tiles to S3 points/ subdirectory",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 4,
+            "input_connections": {
+                "export_type|incollection": {
+                    "id": 1,
+                    "output_name": "points_tiles"
+                }
+            },
+            "inputs": [],
+            "label": "Export Points Tiles",
+            "name": "Export to remote files source",
+            "outputs": [],
+            "position": {
+                "left": 600,
+                "top": 200
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/points/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "07d678a9-716b-4d68-bca4-847ed24d8632",
+            "when": null,
+            "workflow_outputs": []
         }
     },
-    "tags": [],
-    "uuid": "d4e6f8a0-1b3c-4d5e-7f8a-9b0c1d2e3f4a",
-    "version": 1
+    "tags": ["3DTrees", "Point Cloud", "3D Tiles", "Web Visualization"],
+    "uuid": "ebc9801e-603b-48be-abe0-31a5a86bd183",
+    "version": 3
 }
-

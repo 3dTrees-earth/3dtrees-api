@@ -60,11 +60,11 @@
             "outputs": [
                 {
                     "name": "top_views",
-                    "type": "input"
+                    "type": "list"
                 },
                 {
                     "name": "section_views",
-                    "type": "input"
+                    "type": "list"
                 },
                 {
                     "name": "overview_round",
@@ -78,7 +78,7 @@
             "post_job_actions": {},
             "tool_id": "3dtrees_overviews",
             "tool_state": "{\"camera_distance\": \"35.0\", \"cmap\": \"turbo\", \"image_height\": \"768\", \"image_width\": \"1024\", \"input\": {\"__class__\": \"ConnectedValue\"}, \"max_points\": \"100000000\", \"section_width\": \"10\", \"top_views_deg\": \"180\"}",
-            "tool_version": "1.0.0",
+            "tool_version": "1.0.3",
             "type": "tool",
             "uuid": "ff25a841-fd0b-4bcd-84b4-b3a3955f35cb",
             "when": null,
