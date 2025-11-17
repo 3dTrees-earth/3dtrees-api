@@ -18,8 +18,11 @@ class Dataset(BaseModel):
     visibility: Optional[str] = None
 
 class WorkflowName(StrEnum):
+    STANDARD = "Standard"
     OVERVIEW = "Overviews"
     SEGMENTATION = "Segmentation"
+    PY3DTILES = "Py3DTiles"
+    ENDTOEND = "EndToEndPipeline"
 
 # WorkflowStatus enum removed - using Galaxy states directly in database
 
