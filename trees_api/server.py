@@ -1,4 +1,5 @@
 import os
+import json
 from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
 import logging
@@ -199,23 +200,86 @@ def create_job(
             dataset_item_resp = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
             if dataset_item_resp.data:
                 dataset_item_id = dataset_item_resp.data[0]["id"]
-                # Set export directories for all 4 export steps
-                # Path structure: {tool_name}/{dataset_id}/{dataset_item_id}/
-                workflow_parameters = {
-                    "2": {  # Step 2: Export standardized LAZ
+                
+                # Get Galaxy-assigned step IDs (Galaxy renumbers steps during import!)
+                # Query the workflow to get the actual step IDs
+                workflow_structure = galaxy.get_workflow_structure(workflow_name)
+                galaxy_steps = workflow_structure.get('steps', {})
+                
+                # Map export tools by their annotations (most reliable method)
+                export_step_mapping = {
+                    "standardized_laz": None,      # Export from Standardization
+                    "top_views": None,              # Export from Overviews (collection 1)
+                    "section_views": None,          # Export from Overviews (collection 2)
+                    "overview_gif": None,           # Export from Overviews (gif)
+                    "segmented_laz": None,          # Export from Segmentation
+                    "tileset_json": None,           # Export from 3DTiles (tileset)
+                    "preview_pnts": None,           # Export from 3DTiles (preview)
+                    "points_tiles": None            # Export from 3DTiles (points collection)
+                }
+                
+                # Identify export steps by their annotations (preserved from workflow JSON)
+                for step_id, step in galaxy_steps.items():
+                    if step.get('tool_id') == 'export_remote':
+                        annotation = (step.get('annotation') or '').lower()
+                        
+                        # Match based on annotation text
+                        if 'standardized laz' in annotation:
+                            export_step_mapping["standardized_laz"] = step_id
+                        elif 'top view' in annotation:
+                            export_step_mapping["top_views"] = step_id
+                        elif 'section view' in annotation:
+                            export_step_mapping["section_views"] = step_id
+                        elif 'animation' in annotation or 'gif' in annotation:
+                            export_step_mapping["overview_gif"] = step_id
+                        elif 'segmented laz' in annotation:
+                            export_step_mapping["segmented_laz"] = step_id
+                        elif 'tileset' in annotation:
+                            export_step_mapping["tileset_json"] = step_id
+                        elif 'preview' in annotation:
+                            export_step_mapping["preview_pnts"] = step_id
+                        elif 'points tiles' in annotation or 'points/ subdirectory' in annotation:
+                            export_step_mapping["points_tiles"] = step_id
+                
+                logger.info(f"Resolved Galaxy step IDs for exports: {export_step_mapping}")
+                
+                # Build parameters using the actual Galaxy step IDs (as integers!)
+                workflow_parameters = {}
+                if export_step_mapping["standardized_laz"]:
+                    workflow_parameters[int(export_step_mapping["standardized_laz"])] = {
                         "d_uri": f"gxfiles://products-storage/standard/{dataset_id}/{dataset_item_id}/"
-                    },
-                    "4": {  # Step 4: Export overviews
+                    }
+                if export_step_mapping["top_views"]:
+                    workflow_parameters[int(export_step_mapping["top_views"])] = {
                         "d_uri": f"gxfiles://products-storage/overviews/{dataset_id}/{dataset_item_id}/"
-                    },
-                    "6": {  # Step 6: Export segmentation
+                    }
+                if export_step_mapping["section_views"]:
+                    workflow_parameters[int(export_step_mapping["section_views"])] = {
+                        "d_uri": f"gxfiles://products-storage/overviews/{dataset_id}/{dataset_item_id}/"
+                    }
+                if export_step_mapping["overview_gif"]:
+                    workflow_parameters[int(export_step_mapping["overview_gif"])] = {
+                        "d_uri": f"gxfiles://products-storage/overviews/{dataset_id}/{dataset_item_id}/"
+                    }
+                if export_step_mapping["segmented_laz"]:
+                    workflow_parameters[int(export_step_mapping["segmented_laz"])] = {
                         "d_uri": f"gxfiles://products-storage/segmentation/{dataset_id}/{dataset_item_id}/"
-                    },
-                    "8": {  # Step 8: Export 3dtiles
+                    }
+                if export_step_mapping["tileset_json"]:
+                    workflow_parameters[int(export_step_mapping["tileset_json"])] = {
                         "d_uri": f"gxfiles://products-storage/3dtiles/{dataset_id}/{dataset_item_id}/"
                     }
-                }
+                if export_step_mapping["preview_pnts"]:
+                    workflow_parameters[int(export_step_mapping["preview_pnts"])] = {
+                        "d_uri": f"gxfiles://products-storage/3dtiles/{dataset_id}/{dataset_item_id}/"
+                    }
+                if export_step_mapping["points_tiles"]:
+                    workflow_parameters[int(export_step_mapping["points_tiles"])] = {
+                        "d_uri": f"gxfiles://products-storage/3dtiles/{dataset_id}/{dataset_item_id}/points/"
+                    }
+                
                 logger.info(f"Export paths configured for EndToEndPipeline workflow")
+                logger.info(f"Parameters with Galaxy step IDs: {json.dumps(workflow_parameters, indent=2)}")
         except Exception as e:
             logger.warning(f"Could not set export paths: {e}")
     
@@ -271,13 +335,14 @@ def create_job(
     
     # now invoke the workflow
     try:
+        logger.info(f"🔥 About to invoke workflow with parameters: {bool(workflow_parameters)}")
         invocation_result = galaxy.invoke_workflow_with_dataset(
             workflow_name=workflow_name,
             dataset_id=dataset.id,
             history_name=history_name,
             parameters=workflow_parameters if workflow_parameters else None
         )
-        print(invocation_result)
+        logger.info(f"✅ Workflow invoked: {invocation_result}")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invoking workflow {workflow_name} failed: {e} ")
     
