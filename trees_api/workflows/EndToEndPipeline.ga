@@ -1,6 +1,6 @@
 {
     "a_galaxy_workflow": "true",
-    "annotation": "Full pipeline workflow: Standardization → Export → Overviews → Export → Segmentation → Export → 3DTiles → Export",
+    "annotation": "Full pipeline workflow: Standardization → Export → Overviews → Exports → Segmentation → Export → 3DTiles → Exports",
     "comments": [],
     "creator": [
         {
@@ -33,7 +33,7 @@
             "outputs": [],
             "position": {
                 "left": 0,
-                "top": 100
+                "top": 200
             },
             "tool_id": null,
             "tool_state": "{\"optional\": false, \"format\": [\"laz\", \"las\"], \"tag\": null}",
@@ -64,8 +64,8 @@
                 }
             ],
             "position": {
-                "left": 200,
-                "top": 0
+                "left": 280,
+                "top": 200
             },
             "post_job_actions": {},
             "tool_id": "3dtrees_standard",
@@ -97,15 +97,15 @@
                 }
             ],
             "position": {
-                "left": 400,
-                "top": 0
+                "left": 560,
+                "top": 200
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
             "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
-            "uuid": "a1b2c3d4-e5f6-4789-a012-3456789abc01",
+            "uuid": "858c42f7-c864-43a1-9b4b-b78607a1efb4",
             "when": null,
             "workflow_outputs": []
         },
@@ -126,11 +126,11 @@
             "outputs": [
                 {
                     "name": "top_views",
-                    "type": "png"
+                    "type": "list"
                 },
                 {
                     "name": "section_views",
-                    "type": "png"
+                    "type": "list"
                 },
                 {
                     "name": "overview_round",
@@ -138,7 +138,7 @@
                 }
             ],
             "position": {
-                "left": 600,
+                "left": 560,
                 "top": 0
             },
             "post_job_actions": {},
@@ -151,28 +151,18 @@
             "workflow_outputs": []
         },
         "4": {
-            "annotation": "Export overview images to S3 products bucket",
+            "annotation": "Export top view images collection to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 4,
             "input_connections": {
-                "export_type|infiles": [
-                    {
-                        "id": 3,
-                        "output_name": "top_views"
-                    },
-                    {
-                        "id": 3,
-                        "output_name": "section_views"
-                    },
-                    {
-                        "id": 3,
-                        "output_name": "overview_round"
-                    }
-                ]
+                "export_type|incollection": {
+                    "id": 3,
+                    "output_name": "top_views"
+                }
             },
             "inputs": [],
-            "label": "Export Overviews",
+            "label": "Export Top Views",
             "name": "Export datasets",
             "outputs": [
                 {
@@ -181,23 +171,89 @@
                 }
             ],
             "position": {
-                "left": 800,
+                "left": 840,
                 "top": 0
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "b1de4ca6-e880-49f9-a023-e09ca5d33bce",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "5": {
+            "annotation": "Export section view images collection to S3",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 5,
+            "input_connections": {
+                "export_type|incollection": {
+                    "id": 3,
+                    "output_name": "section_views"
+                }
+            },
+            "inputs": [],
+            "label": "Export Section Views",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 840,
+                "top": 100
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "e9a62b2b-74b2-44e3-ba36-cd2e4a01bf43",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "6": {
+            "annotation": "Export overview animation GIF to S3",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 6,
+            "input_connections": {
+                "export_type|infiles": {
+                    "id": 3,
+                    "output_name": "overview_round"
+                }
+            },
+            "inputs": [],
+            "label": "Export Overview GIF",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 840,
+                "top": 200
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
             "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
-            "uuid": "a1b2c3d4-e5f6-4789-a012-3456789abc02",
+            "uuid": "0f3def89-7522-4e51-b6ec-5e59ef424487",
             "when": null,
             "workflow_outputs": []
         },
-        "5": {
+        "7": {
             "annotation": "",
             "content_id": "3dtrees_segmentanytree",
             "errors": null,
-            "id": 5,
+            "id": 7,
             "input_connections": {
                 "input": {
                     "id": 1,
@@ -214,26 +270,26 @@
                 }
             ],
             "position": {
-                "left": 600,
-                "top": 200
+                "left": 560,
+                "top": 400
             },
             "post_job_actions": {},
             "tool_id": "3dtrees_segmentanytree",
             "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"log_file\": false}",
-            "tool_version": "1.1.0+galaxy0",
+            "tool_version": "1.1.0+galaxy7",
             "type": "tool",
             "uuid": "7dad974e-b4f7-45c6-9686-4dd4e5b1bc0d",
             "when": null,
             "workflow_outputs": []
         },
-        "6": {
+        "8": {
             "annotation": "Export segmented LAZ to S3 products bucket",
             "content_id": "export_remote",
             "errors": null,
-            "id": 6,
+            "id": 8,
             "input_connections": {
                 "export_type|infiles": {
-                    "id": 5,
+                    "id": 7,
                     "output_name": "output"
                 }
             },
@@ -247,26 +303,26 @@
                 }
             ],
             "position": {
-                "left": 800,
-                "top": 200
+                "left": 840,
+                "top": 400
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
             "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
-            "uuid": "a1b2c3d4-e5f6-4789-a012-3456789abc03",
+            "uuid": "260ec8de-103c-429c-b4a9-96bafad6d323",
             "when": null,
             "workflow_outputs": []
         },
-        "7": {
-            "annotation": "",
+        "9": {
+            "annotation": "Convert segmented point cloud to 3D Tiles format (parallel with export)",
             "content_id": "3dtrees_py3dtiles",
             "errors": null,
-            "id": 7,
+            "id": 9,
             "input_connections": {
                 "input": {
-                    "id": 5,
+                    "id": 7,
                     "output_name": "output"
                 }
             },
@@ -279,42 +335,40 @@
                     "type": "json"
                 },
                 {
-                    "name": "tile_files",
+                    "name": "preview_pnts",
                     "type": "pnts"
+                },
+                {
+                    "name": "points_tiles",
+                    "type": "collection"
                 }
             ],
             "position": {
-                "left": 1000,
-                "top": 200
+                "left": 1120,
+                "top": 400
             },
             "post_job_actions": {},
             "tool_id": "3dtrees_py3dtiles",
-            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"extra_fields\": \"PredInstance\", \"overwrite\": false, \"srs_out\": \"4978\"}",
+            "tool_state": "{\"extra_fields\": \"PredInstance\", \"input\": {\"__class__\": \"ConnectedValue\"}, \"overwrite\": false, \"srs_out\": \"4978\"}",
             "tool_version": "1.0.4",
             "type": "tool",
             "uuid": "7459499b-6b48-4204-a3cb-261fb1b5b327",
             "when": null,
             "workflow_outputs": []
         },
-        "8": {
-            "annotation": "Export 3D Tiles to S3 products bucket",
+        "10": {
+            "annotation": "Export tileset.json to S3 root",
             "content_id": "export_remote",
             "errors": null,
-            "id": 8,
+            "id": 10,
             "input_connections": {
-                "export_type|infiles": [
-                    {
-                        "id": 7,
-                        "output_name": "tileset_json"
-                    },
-                    {
-                        "id": 7,
-                        "output_name": "tile_files"
-                    }
-                ]
+                "export_type|infiles": {
+                    "id": 9,
+                    "output_name": "tileset_json"
+                }
             },
             "inputs": [],
-            "label": "Export 3D Tiles",
+            "label": "Export Tileset JSON",
             "name": "Export datasets",
             "outputs": [
                 {
@@ -323,15 +377,81 @@
                 }
             ],
             "position": {
-                "left": 1200,
-                "top": 200
+                "left": 1400,
+                "top": 300
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
             "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
-            "uuid": "a1b2c3d4-e5f6-4789-a012-3456789abc04",
+            "uuid": "121e5880-d693-4cf5-8a75-489cca8389ea",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "11": {
+            "annotation": "Export preview.pnts to S3 root",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 11,
+            "input_connections": {
+                "export_type|infiles": {
+                    "id": 9,
+                    "output_name": "preview_pnts"
+                }
+            },
+            "inputs": [],
+            "label": "Export Preview PNTS",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 1400,
+                "top": 400
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "0e934e30-2b67-49cf-9ddd-360079a97668",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "12": {
+            "annotation": "Export points tiles to S3 points/ subdirectory",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 12,
+            "input_connections": {
+                "export_type|incollection": {
+                    "id": 9,
+                    "output_name": "points_tiles"
+                }
+            },
+            "inputs": [],
+            "label": "Export Points Tiles",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 1400,
+                "top": 500
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/points/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "89e25afa-63e6-419c-8f2a-f1196e501a0c",
             "when": null,
             "workflow_outputs": []
         }
@@ -345,5 +465,5 @@
         "S3Export"
     ],
     "uuid": "d352d7b8-fd6f-41f0-9466-8f1675dc387d",
-    "version": 1
+    "version": 2
 }
