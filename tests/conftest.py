@@ -6,6 +6,7 @@ from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError
 
+from trees_api.config import GalaxyConfig, SupabaseConfig, StorageConfig
 from trees_api.galaxy_client import GalaxyClient
 from trees_api.storage_client import StorageClient
 from trees_api.supabase_client import SupabaseClient
@@ -18,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture(scope="session")
 def storage_client() -> StorageClient:
-    client = StorageClient()
+    config = StorageConfig()
+    client = StorageClient(config)
     
     try:
         # Connect to storage service
@@ -68,7 +70,8 @@ def _ensure_bucket_exists(storage_client: StorageClient) -> None:
 
 @pytest.fixture(scope="session")
 def supabase_client() -> SupabaseClient:
-    client = SupabaseClient()
+    config = SupabaseConfig()
+    client = SupabaseClient(config)
     client.connect()
     
     # Authenticate with processor user for testing using environment variables
@@ -176,7 +179,8 @@ def galaxy_client() -> Generator[GalaxyClient, None, None]:
     Returns:
         GalaxyClient: Authenticated and connected client
     """
-    client = GalaxyClient()
+    config = GalaxyConfig()
+    client = GalaxyClient(config)
     
     try:
         # First try to set up user with bootstrap admin API key
