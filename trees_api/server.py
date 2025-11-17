@@ -176,13 +176,31 @@ def create_job(
             logger.warning(f"Could not set export path: {e}")
     
     elif workflow_name == "Segmentation":
+        # Get dataset_item_id for constructing the export path
+        try:
+            dataset_item_resp = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
+            if dataset_item_resp.data:
+                dataset_item_id = dataset_item_resp.data[0]["id"]
+                # Set export directory for step 2 (export_remote tool)
+                # Path structure: segmentation/{dataset_id}/{dataset_item_id}/
+                export_path = f"gxfiles://products-storage/segmentation/{dataset_id}/{dataset_item_id}/"
+                workflow_parameters = {
+                    "2": {  # Step ID of export_remote tool in Segmentation.ga
+                        "d_uri": export_path
+                    }
+                }
+                logger.info(f"Export path for Segmentation workflow: {export_path}")
+        except Exception as e:
+            logger.warning(f"Could not set export path: {e}")
+    
+    elif workflow_name == "EndToEndPipeline":
         # Get dataset_item_id for constructing the export paths
         try:
             dataset_item_resp = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
             if dataset_item_resp.data:
                 dataset_item_id = dataset_item_resp.data[0]["id"]
                 # Set export directories for all 4 export steps
-                # Path structure matches runner
+                # Path structure: {tool_name}/{dataset_id}/{dataset_item_id}/
                 workflow_parameters = {
                     "2": {  # Step 2: Export standardized LAZ
                         "d_uri": f"gxfiles://products-storage/standard/{dataset_id}/{dataset_item_id}/"
@@ -197,7 +215,7 @@ def create_job(
                         "d_uri": f"gxfiles://products-storage/3dtiles/{dataset_id}/{dataset_item_id}/"
                     }
                 }
-                logger.info(f"Export paths configured for Segmentation workflow")
+                logger.info(f"Export paths configured for EndToEndPipeline workflow")
         except Exception as e:
             logger.warning(f"Could not set export paths: {e}")
     
@@ -222,6 +240,32 @@ def create_job(
                     }
                 }
                 logger.info(f"Export paths for Overviews workflow: {export_path}")
+        except Exception as e:
+            logger.warning(f"Could not set export paths: {e}")
+    
+    elif workflow_name == "Py3DTiles":
+        # Get dataset_item_id for constructing the export paths
+        try:
+            dataset_item_resp = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
+            if dataset_item_resp.data:
+                dataset_item_id = dataset_item_resp.data[0]["id"]
+                # Set export directory for 3 export steps
+                # Root path: 3dtiles/{dataset_id}/{dataset_item_id}/
+                # Points path: 3dtiles/{dataset_id}/{dataset_item_id}/points/
+                root_path = f"gxfiles://products-storage/3dtiles/{dataset_id}/{dataset_item_id}/"
+                points_path = f"gxfiles://products-storage/3dtiles/{dataset_id}/{dataset_item_id}/points/"
+                workflow_parameters = {
+                    "2": {  # Step 2: Export tileset.json to root
+                        "d_uri": root_path
+                    },
+                    "3": {  # Step 3: Export preview.pnts to root
+                        "d_uri": root_path
+                    },
+                    "4": {  # Step 4: Export points_tiles collection to points/ subdirectory
+                        "d_uri": points_path
+                    }
+                }
+                logger.info(f"Export paths for Py3DTiles workflow: root={root_path}, points={points_path}")
         except Exception as e:
             logger.warning(f"Could not set export paths: {e}")
     
