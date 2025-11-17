@@ -12,7 +12,30 @@ from pydantic import Field
 from bioblend.galaxy.objects import GalaxyInstance as GalaxyObjectsInstance
 from bioblend.galaxy.objects.wrappers import Workflow
 
-logger = logging.getLogger("trees_api.galaxy_client")
+logger = logging.getLogger("uvicorn")
+
+
+def count_tool_steps_from_workflow(workflow_data: Dict[str, Any]) -> int:
+    """
+    Count the number of tool steps (non-input steps) in a workflow definition.
+    
+    Args:
+        workflow_data: Workflow definition dict (from .ga file or Galaxy API)
+        
+    Returns:
+        Number of tool steps that should create jobs
+    """
+    if not workflow_data or 'steps' not in workflow_data:
+        return 0
+    
+    tool_step_count = 0
+    for step in workflow_data['steps'].values():
+        # Count steps that have a tool_id (these create jobs)
+        # Skip input steps (type='data_input' or tool_id is None)
+        if step.get('tool_id') and step.get('type') != 'data_input':
+            tool_step_count += 1
+    
+    return tool_step_count
 
 
 class GalaxyClient(BaseSettings):
@@ -424,6 +447,31 @@ class GalaxyClient(BaseSettings):
 
         return self.workflow_registry.copy()
     
+    def get_workflow_structure(self, workflow_name: str) -> Dict[str, Any]:
+        """
+        Get the workflow structure as a dictionary including steps and connections.
+        
+        Args:
+            workflow_name: Name of the workflow
+            
+        Returns:
+            Dictionary with workflow structure including steps
+            
+        Raises:
+            KeyError: If workflow name is not registered
+            RuntimeError: If workflow cannot be accessed
+        """
+        if not self.gi:
+            raise RuntimeError("Not connected to Galaxy. Call connect() first.")
+        
+        # Get the workflow object
+        workflow = self.ensure_workflow_available(workflow_name)
+        
+        # Use the low-level Galaxy API client to get the full workflow details
+        # self.gi.gi is the underlying bioblend.galaxy.GalaxyInstance
+        workflow_dict = self.gi.gi.workflows.show_workflow(workflow.id)
+        return workflow_dict
+    
     def get_workflow_info(self, workflow_name: str) -> Workflow:
         """
         Get detailed information about a workflow including its inputs.
@@ -432,7 +480,7 @@ class GalaxyClient(BaseSettings):
             workflow_name: Name of the workflow
             
         Returns:
-            Dictionary with workflow information including inputs
+            Workflow object from bioblend
             
         Raises:
             KeyError: If workflow name is not registered
@@ -471,30 +519,50 @@ class GalaxyClient(BaseSettings):
         
         raise FileNotFoundError(f"No workflow file found for UUID '{workflow_uuid}' in {self.workflows_path}")
     
-    def _ensure_workflow_exists_by_uuid(self, workflow_uuid: str) -> Workflow:
+    def _ensure_workflow_exists_by_uuid(self, workflow_uuid: str, force_update: bool = False) -> Workflow:
         """
-        Ensure a workflow exists in Galaxy, import it if it doesn't (internal method).
+        Ensure a workflow exists in Galaxy.
         
         Args:
             workflow_uuid: UUID of the workflow to check/import
+            force_update: If True, delete and reimport. If False (default), only import if missing.
             
         Returns:
-            Workflow object if workflow exists or was imported successfully
+            Workflow object
             
         Raises:
             RuntimeError: If not connected to Galaxy
-            LookupError: If workflow not found and import fails
+            LookupError: If workflow file not found
         """
+        workflow_file_path = self._find_workflow_file_by_uuid(workflow_uuid)
+        
+        # Get workflow name from UUID registry
+        workflow_name = None
+        for name, uuid in self.workflow_registry.items():
+            if uuid == workflow_uuid:
+                workflow_name = name
+                break
+
         try:
-            # First check if workflow already exists
-            workflow = self._find_workflow_by_uuid(workflow_uuid)
-            logger.info(f"Workflow with UUID '{workflow_uuid}' already exists in Galaxy")
-            return workflow
+            # Try to find workflow by name (more reliable than UUID)
+            existing_workflow = self._find_workflow_by_name(workflow_name) if workflow_name else None
+
+            if existing_workflow and not force_update:
+                logger.info(f"Workflow '{workflow_name}' already exists in Galaxy (ID: {existing_workflow.id})")
+                return existing_workflow
+            elif existing_workflow and force_update:
+                # Only if explicitly requested
+                logger.warning(f"Force update requested: deleting workflow '{workflow_name}'...")
+                existing_workflow.delete()
+                logger.info(f"Importing fresh workflow from {workflow_file_path}")
+                return self.import_workflow(workflow_file_path)
+
         except LookupError:
-            # Workflow doesn't exist, import it
-            workflow_file_path = self._find_workflow_file_by_uuid(workflow_uuid)
-            logger.info(f"Workflow with UUID '{workflow_uuid}' not found, importing from {workflow_file_path}")
-            return self.import_workflow(workflow_file_path)
+            pass  # Workflow doesn't exist, import it
+
+        # Workflow doesn't exist, import it fresh
+        logger.info(f"Workflow '{workflow_name}' not found, importing from {workflow_file_path}")
+        return self.import_workflow(workflow_file_path)
     
     def _invoke_workflow_by_uuid(self, workflow_uuid: str, inputs: Dict[str, Any], history_name: str = None) -> Dict[str, Any]:
         """
@@ -516,8 +584,19 @@ class GalaxyClient(BaseSettings):
         if not self.gi:
             raise RuntimeError("Not connected to Galaxy. Call connect() first.")
             
-        # Find the workflow
-        workflow = self._find_workflow_by_uuid(workflow_uuid)
+        # Find the workflow by name (Galaxy doesn't properly index by UUID)
+        # Get workflow name from UUID registry
+        workflow_name = None
+        for name, uuid in self.workflow_registry.items():
+            if uuid == workflow_uuid:
+                workflow_name = name
+                break
+        
+        if not workflow_name:
+            raise LookupError(f"No workflow found in registry with UUID: {workflow_uuid}")
+        
+        # Find the workflow by name (more reliable than UUID lookup in Galaxy)
+        workflow = self._find_workflow_by_name(workflow_name)
         
         try:
             # Create a history if name provided
@@ -530,7 +609,9 @@ class GalaxyClient(BaseSettings):
             
             # Log parameters if present for debugging
             if "parameters" in inputs:
-                logger.info(f"Workflow parameters: {inputs['parameters']}")
+                logger.info(f"Workflow parameters found in inputs: {inputs['parameters']}")
+            else:
+                logger.warning(f"No parameters found in inputs dict")
             
             # Invoke the workflow
             invocation = workflow.invoke(
@@ -639,6 +720,8 @@ class GalaxyClient(BaseSettings):
             KeyError: If workflow name is not registered
             RuntimeError: If workflow cannot be imported or invoked
         """
+        logger.info(f"🚀 invoke_workflow_with_dataset called: workflow={workflow_name}, dataset={dataset_id}, params={parameters}")
+        
         # Prepare inputs for the workflow
         inputs = self.prepare_workflow_inputs(workflow_name, dataset_id)
         
