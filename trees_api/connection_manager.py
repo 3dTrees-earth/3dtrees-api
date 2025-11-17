@@ -6,6 +6,7 @@ from threading import Lock
 
 from pydantic import BaseModel, Field
 
+from trees_api.config import AppConfig
 from trees_api.galaxy_client import GalaxyClient
 from trees_api.supabase_client import SupabaseClient
 from trees_api.storage_client import StorageClient
@@ -33,7 +34,7 @@ class ConnectionManager:
     _instance = None
     _lock = Lock()
     
-    def __new__(cls):
+    def __new__(cls, config: Optional[AppConfig] = None):
         """Singleton pattern to ensure only one manager exists."""
         if cls._instance is None:
             with cls._lock:
@@ -41,9 +42,16 @@ class ConnectionManager:
                     cls._instance = super().__new__(cls)
         return cls._instance
     
-    def __init__(self):
-        """Initialize the connection manager."""
+    def __init__(self, config: Optional[AppConfig] = None):
+        """
+        Initialize the connection manager.
+        
+        Args:
+            config: AppConfig instance with all service configurations.
+                    If None, creates default config (for backward compatibility).
+        """
         if not hasattr(self, '_initialized'):
+            self.config = config or AppConfig()
             self.galaxy = ClientState()
             self.supabase = ClientState()
             self.storage = ClientState()
@@ -62,7 +70,7 @@ class ConnectionManager:
             # Try to connect
             try:
                 logger.info("Connecting to Galaxy...")
-                client = GalaxyClient()
+                client = GalaxyClient(self.config.galaxy)
                 client.authenticate()
                 client.connect()
                 
@@ -98,7 +106,7 @@ class ConnectionManager:
             # Try to connect
             try:
                 logger.info("Connecting to Supabase...")
-                client = SupabaseClient()
+                client = SupabaseClient(self.config.supabase)
                 client.connect()
                 
                 # Try to authenticate
@@ -150,7 +158,7 @@ class ConnectionManager:
             # Try to connect
             try:
                 logger.info("Connecting to Storage...")
-                client = StorageClient()
+                client = StorageClient(self.config.storage)
                 client.connect()
                 
                 # Update state
