@@ -9,14 +9,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from trees_api.config import AppConfig
 from trees_api.galaxy_client import GalaxyClient
 from trees_api.supabase_client import SupabaseClient
 from trees_api.storage_client import StorageClient
-from trees_api.connection_manager import connection_manager
+from trees_api.connection_manager import ConnectionManager
 from trees_api.upload_router import router as upload_router
+from trees_api.workflow_config import build_workflow_parameters
 
 
 logger = logging.getLogger("uvicorn")
+
+# Global connection manager instance (will be initialized in lifespan)
+connection_manager: Optional[ConnectionManager] = None
 
 # Dependency injection functions using ConnectionManager
 def get_galaxy_client() -> Optional[GalaxyClient]:
@@ -35,7 +40,21 @@ def get_storage_client() -> Optional[StorageClient]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize connections on startup and cleanup on shutdown."""
+    global connection_manager
+    
     logger.info("Starting up 3DTrees API...")
+    
+    # Create and validate centralized configuration
+    try:
+        config = AppConfig()
+        config.validate()
+        logger.info("Configuration validated successfully")
+    except ValueError as e:
+        logger.error(f"Configuration validation failed: {e}")
+        raise RuntimeError(f"Configuration error: {e}") from e
+    
+    # Initialize connection manager with config
+    connection_manager = ConnectionManager(config)
     
     # Try to initialize all clients (but don't fail if they can't connect)
     connection_manager.connect_galaxy()
@@ -81,6 +100,115 @@ class JobCreateRequest(BaseModel):
     overwrite: bool = False
     parameters: Dict[str, Any] = {}
 
+
+# Helper functions for job creation
+def _import_dataset_from_storage(
+    galaxy: GalaxyClient,
+    supabase: SupabaseClient,
+    dataset_id: str,
+    history
+):
+    """
+    Import dataset from S3/MinIO into Galaxy history using file sources.
+    
+    Args:
+        galaxy: Connected Galaxy client
+        supabase: Connected Supabase client
+        dataset_id: ID of the dataset to import
+        history: Galaxy history object to import into
+        
+    Returns:
+        Imported dataset object from Galaxy
+        
+    Raises:
+        HTTPException: If dataset import fails
+    """
+    try:
+        database_dataset = supabase.get_dataset(dataset_id)
+        
+        # Construct file source URI using helper method
+        # bucket_path is like "LAS/Example_Platane.laz"
+        file_source_uri = galaxy.build_file_source_uri("raw-storage", database_dataset.bucket_path)
+        
+        logger.info(f"Importing dataset from file source: {file_source_uri}")
+        dataset = galaxy.import_from_file_source(history, file_source_uri)
+        galaxy.wait_for_upload(dataset)  # Wait for import to complete
+        
+        return dataset
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Importing dataset {dataset_id} from file source failed: {e}"
+        ) from e
+
+
+def _invoke_and_record_workflow(
+    galaxy: GalaxyClient,
+    supabase: SupabaseClient,
+    workflow_name: str,
+    dataset_id: str,
+    dataset,
+    history_name: str,
+    workflow_parameters: Dict[int, Dict[str, str]],
+    user_parameters: dict
+):
+    """
+    Invoke Galaxy workflow and record invocation in Supabase.
+    
+    Args:
+        galaxy: Connected Galaxy client
+        supabase: Connected Supabase client
+        workflow_name: Name of the workflow to invoke
+        dataset_id: ID of the dataset being processed
+        dataset: Galaxy dataset object (input for workflow)
+        history_name: Name of the Galaxy history
+        workflow_parameters: Workflow step parameters (with integer keys)
+        user_parameters: User-defined parameters to store
+        
+    Returns:
+        WorkflowInvocation object from Supabase
+        
+    Raises:
+        HTTPException: If workflow invocation or recording fails
+    """
+    try:
+        logger.info(f"Invoking workflow '{workflow_name}' with {len(workflow_parameters)} parameter(s)")
+        invocation_result = galaxy.invoke_workflow_with_dataset(
+            workflow_name=workflow_name,
+            dataset_id=dataset.id,
+            history_name=history_name,
+            parameters=workflow_parameters if workflow_parameters else None
+        )
+        logger.info(f"Workflow invoked successfully: {invocation_result['invocation_id']}")
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invoking workflow {workflow_name} failed: {e}"
+        ) from e
+    
+    # Record workflow invocation in Supabase
+    try:
+        workflow_invocation = supabase.create_workflow_invocation(
+            workflow_uuid=invocation_result["invocation_id"],
+            dataset_id=dataset_id,
+            workflow_name=workflow_name
+        )
+        
+        # Store user parameters if provided
+        if user_parameters:
+            supabase.update_workflow_invocation(
+                workflow_invocation.invocation_id,
+                parameters=user_parameters
+            )
+        
+        return workflow_invocation
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Creating workflow invocation in Supabase failed: {e}"
+        ) from e
 
 
 @app.get("/")
@@ -141,229 +269,35 @@ def create_job(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Loading Workflow {workflow_name} and history failed: {e} ")
     
-    # Import dataset directly from S3/MinIO using Galaxy file sources
-    try:
-        database_dataset = supabase.get_dataset(dataset_id)
-        
-        # Construct file source URI using helper method
-        # bucket_path is like "LAS/Example_Platane.laz"
-        file_source_uri = galaxy.build_file_source_uri("raw-storage", database_dataset.bucket_path)
-        
-        logger.info(f"Importing dataset from file source: {file_source_uri}")
-        dataset = galaxy.import_from_file_source(history, file_source_uri)
-        galaxy.wait_for_upload(dataset)  # Wait for import to complete
-        
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Importing dataset {dataset_id} from file source failed: {e}")
+    # Import dataset from S3/MinIO using Galaxy file sources
+    dataset = _import_dataset_from_storage(galaxy, supabase, dataset_id, history)
     
-    # Prepare workflow parameters (e.g., export path for Standard workflow)
-    workflow_parameters = {}
-    if workflow_name == "Standard":
-        # Get dataset_item_id for constructing the export path
-        try:
-            dataset_item_resp = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
-            if dataset_item_resp.data:
-                dataset_item_id = dataset_item_resp.data[0]["id"]
-                # Set export directory for step 2 (export_remote tool)
-                # Path structure matches runner: standard/{dataset_id}/{dataset_item_id}/
-                export_path = f"gxfiles://products-storage/standard/{dataset_id}/{dataset_item_id}/"
-                workflow_parameters = {
-                    "2": {  # Step ID of export_remote tool in Standard.ga
-                        "d_uri": export_path
-                    }
-                }
-                logger.info(f"Export path for Standard workflow: {export_path}")
-        except Exception as e:
-            logger.warning(f"Could not set export path: {e}")
+    # Prepare workflow parameters using dynamic step resolution
+    # This replaces the old 176-line if-elif block with a single function call!
+    workflow_parameters = build_workflow_parameters(
+        galaxy_client=galaxy,
+        supabase_client=supabase,
+        workflow_name=workflow_name,
+        dataset_id=int(dataset_id)
+    )
     
-    elif workflow_name == "Segmentation":
-        # Get dataset_item_id for constructing the export path
-        try:
-            dataset_item_resp = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
-            if dataset_item_resp.data:
-                dataset_item_id = dataset_item_resp.data[0]["id"]
-                # Set export directory for step 2 (export_remote tool)
-                # Path structure: segmentation/{dataset_id}/{dataset_item_id}/
-                export_path = f"gxfiles://products-storage/segmentation/{dataset_id}/{dataset_item_id}/"
-                workflow_parameters = {
-                    "2": {  # Step ID of export_remote tool in Segmentation.ga
-                        "d_uri": export_path
-                    }
-                }
-                logger.info(f"Export path for Segmentation workflow: {export_path}")
-        except Exception as e:
-            logger.warning(f"Could not set export path: {e}")
-    
-    elif workflow_name == "EndToEndPipeline":
-        # Get dataset_item_id for constructing the export paths
-        try:
-            dataset_item_resp = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
-            if dataset_item_resp.data:
-                dataset_item_id = dataset_item_resp.data[0]["id"]
-                
-                # Get Galaxy-assigned step IDs (Galaxy renumbers steps during import!)
-                # Query the workflow to get the actual step IDs
-                workflow_structure = galaxy.get_workflow_structure(workflow_name)
-                galaxy_steps = workflow_structure.get('steps', {})
-                
-                # Map export tools by their annotations (most reliable method)
-                export_step_mapping = {
-                    "standardized_laz": None,      # Export from Standardization
-                    "top_views": None,              # Export from Overviews (collection 1)
-                    "section_views": None,          # Export from Overviews (collection 2)
-                    "overview_gif": None,           # Export from Overviews (gif)
-                    "segmented_laz": None,          # Export from Segmentation
-                    "tileset_json": None,           # Export from 3DTiles (tileset)
-                    "preview_pnts": None,           # Export from 3DTiles (preview)
-                    "points_tiles": None            # Export from 3DTiles (points collection)
-                }
-                
-                # Identify export steps by their annotations (preserved from workflow JSON)
-                for step_id, step in galaxy_steps.items():
-                    if step.get('tool_id') == 'export_remote':
-                        annotation = (step.get('annotation') or '').lower()
-                        
-                        # Match based on annotation text
-                        if 'standardized laz' in annotation:
-                            export_step_mapping["standardized_laz"] = step_id
-                        elif 'top view' in annotation:
-                            export_step_mapping["top_views"] = step_id
-                        elif 'section view' in annotation:
-                            export_step_mapping["section_views"] = step_id
-                        elif 'animation' in annotation or 'gif' in annotation:
-                            export_step_mapping["overview_gif"] = step_id
-                        elif 'segmented laz' in annotation:
-                            export_step_mapping["segmented_laz"] = step_id
-                        elif 'tileset' in annotation:
-                            export_step_mapping["tileset_json"] = step_id
-                        elif 'preview' in annotation:
-                            export_step_mapping["preview_pnts"] = step_id
-                        elif 'points tiles' in annotation or 'points/ subdirectory' in annotation:
-                            export_step_mapping["points_tiles"] = step_id
-                
-                logger.info(f"Resolved Galaxy step IDs for exports: {export_step_mapping}")
-                
-                # Build parameters using the actual Galaxy step IDs (as integers!)
-                workflow_parameters = {}
-                if export_step_mapping["standardized_laz"]:
-                    workflow_parameters[int(export_step_mapping["standardized_laz"])] = {
-                        "d_uri": f"gxfiles://products-storage/standard/{dataset_id}/{dataset_item_id}/"
-                    }
-                if export_step_mapping["top_views"]:
-                    workflow_parameters[int(export_step_mapping["top_views"])] = {
-                        "d_uri": f"gxfiles://products-storage/overviews/{dataset_id}/{dataset_item_id}/"
-                    }
-                if export_step_mapping["section_views"]:
-                    workflow_parameters[int(export_step_mapping["section_views"])] = {
-                        "d_uri": f"gxfiles://products-storage/overviews/{dataset_id}/{dataset_item_id}/"
-                    }
-                if export_step_mapping["overview_gif"]:
-                    workflow_parameters[int(export_step_mapping["overview_gif"])] = {
-                        "d_uri": f"gxfiles://products-storage/overviews/{dataset_id}/{dataset_item_id}/"
-                    }
-                if export_step_mapping["segmented_laz"]:
-                    workflow_parameters[int(export_step_mapping["segmented_laz"])] = {
-                        "d_uri": f"gxfiles://products-storage/segmentation/{dataset_id}/{dataset_item_id}/"
-                    }
-                if export_step_mapping["tileset_json"]:
-                    workflow_parameters[int(export_step_mapping["tileset_json"])] = {
-                        "d_uri": f"gxfiles://products-storage/3dtiles/{dataset_id}/{dataset_item_id}/"
-                    }
-                if export_step_mapping["preview_pnts"]:
-                    workflow_parameters[int(export_step_mapping["preview_pnts"])] = {
-                        "d_uri": f"gxfiles://products-storage/3dtiles/{dataset_id}/{dataset_item_id}/"
-                    }
-                if export_step_mapping["points_tiles"]:
-                    workflow_parameters[int(export_step_mapping["points_tiles"])] = {
-                        "d_uri": f"gxfiles://products-storage/3dtiles/{dataset_id}/{dataset_item_id}/points/"
-                    }
-                
-                logger.info(f"Export paths configured for EndToEndPipeline workflow")
-                logger.info(f"Parameters with Galaxy step IDs: {json.dumps(workflow_parameters, indent=2)}")
-        except Exception as e:
-            logger.warning(f"Could not set export paths: {e}")
-    
-    elif workflow_name == "Overviews":
-        # Get dataset_item_id for constructing the export paths
-        try:
-            dataset_item_resp = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
-            if dataset_item_resp.data:
-                dataset_item_id = dataset_item_resp.data[0]["id"]
-                # Set export directory for all 3 export steps
-                # Path structure matches runner: overviews/{dataset_id}/{dataset_item_id}/
-                export_path = f"gxfiles://products-storage/overviews/{dataset_id}/{dataset_item_id}/"
-                workflow_parameters = {
-                    "2": {  # Step 2: Export top_views collection
-                        "d_uri": export_path
-                    },
-                    "3": {  # Step 3: Export section_views collection
-                        "d_uri": export_path
-                    },
-                    "4": {  # Step 4: Export overview_round GIF
-                        "d_uri": export_path
-                    }
-                }
-                logger.info(f"Export paths for Overviews workflow: {export_path}")
-        except Exception as e:
-            logger.warning(f"Could not set export paths: {e}")
-    
-    elif workflow_name == "Py3DTiles":
-        # Get dataset_item_id for constructing the export paths
-        try:
-            dataset_item_resp = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
-            if dataset_item_resp.data:
-                dataset_item_id = dataset_item_resp.data[0]["id"]
-                # Set export directory for 3 export steps
-                # Root path: 3dtiles/{dataset_id}/{dataset_item_id}/
-                # Points path: 3dtiles/{dataset_id}/{dataset_item_id}/points/
-                root_path = f"gxfiles://products-storage/3dtiles/{dataset_id}/{dataset_item_id}/"
-                points_path = f"gxfiles://products-storage/3dtiles/{dataset_id}/{dataset_item_id}/points/"
-                workflow_parameters = {
-                    "2": {  # Step 2: Export tileset.json to root
-                        "d_uri": root_path
-                    },
-                    "3": {  # Step 3: Export preview.pnts to root
-                        "d_uri": root_path
-                    },
-                    "4": {  # Step 4: Export points_tiles collection to points/ subdirectory
-                        "d_uri": points_path
-                    }
-                }
-                logger.info(f"Export paths for Py3DTiles workflow: root={root_path}, points={points_path}")
-        except Exception as e:
-            logger.warning(f"Could not set export paths: {e}")
-    
-    # now invoke the workflow
-    try:
-        logger.info(f"🔥 About to invoke workflow with parameters: {bool(workflow_parameters)}")
-        invocation_result = galaxy.invoke_workflow_with_dataset(
-            workflow_name=workflow_name,
-            dataset_id=dataset.id,
-            history_name=history_name,
-            parameters=workflow_parameters if workflow_parameters else None
-        )
-        logger.info(f"✅ Workflow invoked: {invocation_result}")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invoking workflow {workflow_name} failed: {e} ")
-    
-    # if there are no errors invoking the workflow, create the workflow invocation in Supabase
-    try:
-        workflow_invocation = supabase.create_workflow_invocation(
-            workflow_uuid=invocation_result["invocation_id"],
-            dataset_id=dataset_id,
-            workflow_name=workflow_name
-        )
-        
-        # Store the parameters in the parameters field
-        if parameters:
-            supabase.update_workflow_invocation(
-                workflow_invocation.invocation_id,
-                parameters=parameters
-            )
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Creating workflow invocation in Supabase failed: {e} ")
+    # Invoke workflow and record in Supabase
+    return _invoke_and_record_workflow(
+        galaxy=galaxy,
+        supabase=supabase,
+        workflow_name=workflow_name,
+        dataset_id=dataset_id,
+        dataset=dataset,
+        history_name=history_name,
+        workflow_parameters=workflow_parameters,
+        user_parameters=parameters
+    )
 
-    return workflow_invocation
+
+    # OLD CODE REMOVED - 176 lines replaced with build_workflow_parameters() call above
+    # See commit history for old if-elif workflow parameter building code
+    # Key improvement: Dynamic step ID resolution fixes hardcoded step ID bug
+
 
 @app.get("/jobs")
 def list_jobs(
