@@ -5,41 +5,34 @@ from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 
 from trees_api.models import Dataset, WorkflowInvocation
+from trees_api.config import SupabaseConfig
 
 logger = logging.getLogger("uvicorn")
 
 
-class SupabaseClient(BaseSettings):
-    """Supabase client for 3DTrees API with Pydantic settings configuration."""
+class SupabaseClient:
+    """Supabase client for 3DTrees API."""
     
-    url: str = Field(default="", description="Supabase project URL")
-    key: str = Field(default="", description="Supabase anon/public key")
-    service_key: Optional[str] = Field(default=None, description="Supabase service role key (for admin operations)")
-    
-    # Supabase user credentials (separate from Galaxy credentials)
-    email: Optional[str] = Field(default="processor@3dtrees.earth", description="Supabase user email")
-    password: Optional[str] = Field(default=None, description="Supabase user password")
-    
-    # optional settings to overwrite table names
-    datasets_table: str = Field(default="datasets", description="Supabase datasets table name")
-    invocations_table: str = Field(default="galaxy_workflow_invocations", description="Supabase workflow invocations table name")
-
-    # Client instance
-    client: Optional[Client] = Field(default=None, init=False)
-    
-    model_config = SettingsConfigDict(
-        case_sensitive=False,
-        cli_parse_args=True,
-        cli_ignore_unknown_args=True,
-        env_prefix="SUPABASE_",
-        extra="ignore",
-    )
+    def __init__(self, config: SupabaseConfig):
+        """
+        Initialize Supabase client with configuration.
+        
+        Args:
+            config: SupabaseConfig instance with connection details
+        """
+        self.url = config.url
+        self.key = config.key
+        self.service_key = config.service_key
+        self.email = config.email
+        self.password = config.password
+        self.datasets_table = config.datasets_table
+        self.invocations_table = config.invocations_table
+        
+        self.client: Optional[Client] = None
     
     def connect(self) -> bool:
         if not self.url or not self.key:

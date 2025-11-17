@@ -7,10 +7,10 @@ import requests
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
 from bioblend.galaxy.objects import GalaxyInstance as GalaxyObjectsInstance
 from bioblend.galaxy.objects.wrappers import Workflow
+
+from trees_api.config import GalaxyConfig
 
 logger = logging.getLogger("uvicorn")
 
@@ -38,24 +38,29 @@ def count_tool_steps_from_workflow(workflow_data: Dict[str, Any]) -> int:
     return tool_step_count
 
 
-class GalaxyClient(BaseSettings):
-    url: str = Field(default='http://127.0.0.1:9090', description="Galaxy server URL")
-    api_key: Optional[str] = Field(default=None, description="Galaxy API key (if already available)")
-    email: Optional[str] = Field(default='processor@3dtrees.earth', description="Galaxy user email")
-    password: Optional[str] = Field(default=None, description="Galaxy user password")
-    admin_key: Optional[str] = Field(default=None, description="Galaxy admin key")
-    workflows_path: Path = Field(default=Path(__file__).parent / "workflows", description="Path to workflow files")
+class GalaxyClient:
+    """
+    Galaxy client for 3DTrees API.
     
-    workflow_registry: Dict[str, str] = Field(default_factory=dict, init=False)
-    gi: Optional[GalaxyObjectsInstance] = Field(default=None, init=False)
-
-    model_config = SettingsConfigDict(
-        case_sensitive=False,
-        cli_parse_args=True,
-        cli_ignore_unknown_args=True,
-        env_prefix = "GALAXY_",
-        extra="ignore",
-    )
+    Handles authentication, workflow management, and dataset operations.
+    """
+    
+    def __init__(self, config: GalaxyConfig):
+        """
+        Initialize Galaxy client with configuration.
+        
+        Args:
+            config: GalaxyConfig instance with connection details
+        """
+        self.url = config.url
+        self.api_key = config.api_key
+        self.email = config.email
+        self.password = config.password
+        self.admin_key = config.admin_key
+        self.workflows_path = config.workflows_path
+        
+        self.workflow_registry: Dict[str, str] = {}
+        self.gi: Optional[GalaxyObjectsInstance] = None
     
     def setup_user_with_bootstrap(self, email: Optional[str] = None, password: Optional[str] = None) -> bool:
         """
