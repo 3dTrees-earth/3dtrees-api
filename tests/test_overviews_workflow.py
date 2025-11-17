@@ -181,16 +181,15 @@ def test_overviews_workflow(
     
     # Define all expected outputs for the Overviews workflow
     # Path structure: overviews/{dataset_id}/{dataset_item_id}/{filename}
-    # NOTE: Galaxy's export_remote adds .{extension} to collection elements, causing double extensions
     dataset_id = str(test_remote_file.id)
     export_base_path = f"overviews/{dataset_id}/{dataset_item_id}"
     
     expected_outputs = {
-        'top_view_00.png.png': 'Top view perspective 0°',  # Note: double .png from Galaxy export
-        'top_view_01.png.png': 'Top view perspective 180°',
-        'section_ew.png.png': 'East-West section view',
-        'section_ns.png.png': 'North-South section view',
-        'Overview Animation.gif': 'Rotating overview animation',  # Note: Label name, not file name
+        'top_view_00.png': 'Top view perspective 0°',
+        'top_view_01.png': 'Top view perspective 180°',
+        'section_ew.png': 'East-West section view',
+        'section_ns.png': 'North-South section view',
+        'overview_animation.gif': 'Rotating overview animation',
     }
     
     missing_outputs = []
@@ -207,14 +206,14 @@ def test_overviews_workflow(
                 Prefix=s3_key,
                 MaxKeys=1
             )
-            
+                
             if 'Contents' in response and len(response['Contents']) > 0:
                 found_outputs.append(output_name)
                 logger.info(f"  ✅ {output_name}: {description}")
             else:
                 missing_outputs.append(output_name)
                 logger.error(f"  ❌ {output_name}: NOT FOUND at {s3_key}")
-        
+            
         except Exception as e:
             missing_outputs.append(output_name)
             logger.error(f"  ❌ {output_name}: ERROR checking - {e}")

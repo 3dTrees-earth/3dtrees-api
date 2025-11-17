@@ -86,7 +86,7 @@ def test_py3dtiles_workflow(
     workflow_finished = False
     final_status = None
     supabase_inv = None
-    expected_jobs = 1  # Py3DTiles workflow: 1 tool only (no export steps yet)
+    expected_jobs = 4  # Py3DTiles workflow: 1 tool + 3 exports (tileset.json + preview.pnts + points_tiles collection)
     
     for attempt in range(max_attempts):
         time.sleep(5)
@@ -174,5 +174,102 @@ def test_py3dtiles_workflow(
             # Verify no failed jobs
             if state in ['error', 'failed']:
                 pytest.fail(f"Job {i} ({tool_id}) failed with state: {state}")
+    
+    # Step 8: Verify exported 3D Tiles in S3 products bucket
+    logger.info("🔍 Verifying exported 3D Tiles in S3 products bucket...")
+    
+    # Get dataset_item_id to construct actual export path
+    try:
+        dataset_item_resp = supabase_client.client.table("dataset_items").select("id").eq("dataset_id", test_remote_file.id).limit(1).execute()
+        if not dataset_item_resp.data:
+            pytest.fail(f"Could not get dataset_item_id for dataset {test_remote_file.id}")
+        dataset_item_id = dataset_item_resp.data[0]["id"]
+    except Exception as e:
+        pytest.fail(f"Error getting dataset_item_id: {e}")
+
+    # Define all expected outputs for the Py3DTiles workflow
+    # Path structure:
+    #   Root: 3dtiles/{dataset_id}/{dataset_item_id}/
+    #   Points: 3dtiles/{dataset_id}/{dataset_item_id}/points/
+    # NOTE: With separate outputs + separate export_remote steps, we can control the directory structure!
+    dataset_id = str(test_remote_file.id)
+    export_base_path = f"3dtiles/{dataset_id}/{dataset_item_id}"
+
+    # Expected outputs at root level:
+    # 1. tileset.json - Metadata file
+    # 2. preview.pnts - Thumbnail/preview tile
+    expected_root_outputs = {
+        'tileset.json': 'Cesium 3D Tileset JSON metadata',
+        'preview.pnts': '3D Tiles preview/thumbnail',
+    }
+
+    missing_outputs = []
+    found_outputs = []
+
+    # Check for root level files (tileset.json and preview.pnts)
+    logger.info("  Checking root level outputs...")
+    for output_name, description in expected_root_outputs.items():
+        # Construct the full S3 key
+        s3_key = f"{export_base_path}/{output_name}"
+
+        try:
+            # Check if file exists in products-storage bucket using direct S3 API
+            response = storage_client.client.list_objects_v2(
+                Bucket='3dtrees-tool-products',
+                Prefix=s3_key,
+                MaxKeys=1
+            )
+
+            if 'Contents' in response and len(response['Contents']) > 0:
+                found_outputs.append(output_name)
+                logger.info(f"    ✅ {output_name}: {description}")
+            else:
+                missing_outputs.append(output_name)
+                logger.error(f"    ❌ {output_name}: NOT FOUND at {s3_key}")
+
+        except Exception as e:
+            missing_outputs.append(output_name)
+            logger.error(f"    ❌ {output_name}: ERROR checking - {e}")
+
+    # Check for tile files in points/ subdirectory
+    logger.info("  Checking points/ subdirectory...")
+    try:
+        # Check for .pnts files in the points/ subdirectory
+        points_path = f"{export_base_path}/points/"
+        response = storage_client.client.list_objects_v2(
+            Bucket='3dtrees-tool-products',
+            Prefix=points_path,
+            MaxKeys=1000  # Need more to count all .pnts files
+        )
+
+        if 'Contents' in response:
+            # Look for files with .pnts extension in the points/ directory
+            tile_files = [obj['Key'] for obj in response['Contents'] if obj['Key'].endswith('.pnts')]
+            if tile_files:
+                logger.info(f"    ✅ Tile files: Found {len(tile_files)} .pnts files in points/ subdirectory")
+                found_outputs.append(f'{len(tile_files)} tile files')
+            else:
+                missing_outputs.append('points_tiles')
+                logger.error(f"    ❌ Tile files: NO .pnts files found at {points_path}")
+        else:
+            missing_outputs.append('points_tiles')
+            logger.error(f"    ❌ Tile files: No files found at {points_path}")
+
+    except Exception as e:
+        missing_outputs.append('points_tiles')
+        logger.error(f"    ❌ Tile files: ERROR checking - {e}")
+
+    # CRITICAL ASSERTION: All outputs must be present
+    if missing_outputs:
+        error_msg = (
+            f"\n❌ FAILED: Missing {len(missing_outputs)} expected outputs!\n"
+            f"   Expected path: {export_base_path}/\n"
+            f"   Missing: {missing_outputs}\n"
+            f"   Found: {found_outputs}\n"
+            f"   This indicates that not all export jobs completed successfully."
+        )
+        pytest.fail(error_msg)
+
+    logger.info(f"✅ All expected outputs verified in S3!")
     
     logger.info("✅ Py3DTiles workflow End-to-End test PASSED!")

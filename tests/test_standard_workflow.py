@@ -164,8 +164,8 @@ def test_standard_workflow(
         if dataset_item_resp.data:
             dataset_item_id = dataset_item_resp.data[0]["id"]
             # Expected path matches runner structure: standard/{dataset_id}/{dataset_item_id}/
-            # Filename is Galaxy output label + extension: "Standardized Point Cloud.laz"
-            expected_key = f"standard/{test_remote_file.id}/{dataset_item_id}/Standardized Point Cloud.laz"
+            # Filename is Galaxy output label + extension: "standardized.laz"
+            expected_key = f"standard/{test_remote_file.id}/{dataset_item_id}/standardized.laz"
             
             logger.info(f"📂 Checking for exported file: {expected_key}")
             

@@ -1,15 +1,15 @@
 """
 Test Segmentation workflow - End-to-End Test
 
-This test verifies the complete production workflow:
+This test verifies the segmentation workflow:
 1. Dataset exists in S3 (raw-storage bucket) and Supabase DB
 2. Call API endpoint to start workflow
 3. Galaxy imports directly from S3 using file sources (no download/upload)
 4. Monitor workflow status via status.py poller (database-driven)
 5. Verify outputs in Supabase DB
-6. Verify all 4 exported product types in S3 products bucket
+6. Verify segmented LAZ exported to S3 products bucket
 
-Full pipeline: Standardization → Export → Overviews → Export → Segmentation → Export → 3DTiles → Export
+Simple pipeline: Raw LAZ → Segmentation → Export
 
 This test requires GPU for SegmentAnyTree step. Test will fail if GPU unavailable (production-only test).
 """
@@ -35,7 +35,7 @@ def test_segmentation_workflow(
     test_remote_file: Dataset
 ):
     """
-    End-to-End test for Segmentation workflow (full pipeline).
+    End-to-End test for Segmentation workflow (simple segmentation only).
     
     Production-like flow:
     1. Dataset already exists in S3 (raw-storage) and Supabase (via test_remote_file fixture)
@@ -43,14 +43,14 @@ def test_segmentation_workflow(
     3. API imports file from S3 using Galaxy file sources (no download/upload)
     4. Monitor workflow status via status.py poller → updates Supabase DB
     5. Check workflow completion via database (not Galaxy directly)
-    6. Verify all 4 exported product types in S3 products bucket
+    6. Verify segmented LAZ exported to S3 products bucket
     
     This test simulates the actual production flow where the status.py cronjob
-    continuously syncs Galaxy status to the database (~5 minutes for full pipeline).
+    continuously syncs Galaxy status to the database (~2 minutes).
     
     Requires GPU for SegmentAnyTree step - will fail hard if unavailable.
     """
-    logger.info("🧪 Testing Segmentation workflow (End-to-End, Full Pipeline)")
+    logger.info("🧪 Testing Segmentation workflow (End-to-End)")
     
     # Step 1: Verify dataset exists in S3 and DB
     logger.info(f"📦 Dataset ID: {test_remote_file.id}")
@@ -88,9 +88,9 @@ def test_segmentation_workflow(
     
     # Step 3: Monitor workflow status using status.py poller (production-like)
     logger.info("⏳ Monitoring workflow status via status.py poller...")
-    logger.info("⚠️  Full pipeline (4 tools + 4 exports) may take 3-5 minutes")
+    logger.info("⚠️  Segmentation workflow (1 tool + 1 export) may take 2-3 minutes")
     
-    max_attempts = 60  # 60 × 5 seconds = 5 minutes max for full pipeline
+    max_attempts = 40  # 40 × 5 seconds = ~3 minutes max
     workflow_finished = False
     final_status = None
     supabase_inv = None
@@ -134,7 +134,7 @@ def test_segmentation_workflow(
                     final_status = 'ok' if all_jobs_successful else 'error'
                     logger.info(f"✅ All jobs completed: {final_status}")
                     break
-        
+                    
         except Exception as e:
             if "AssertionError" in str(type(e).__name__):
                 raise
@@ -148,14 +148,14 @@ def test_segmentation_workflow(
     # Step 5: Check for GPU errors (fail hard - no skip for production test)
     if final_status in ['error', 'failed']:
         logger.error("❌ Workflow failed - checking for GPU errors...")
-        
-        # Check jobs for GPU-related errors
+    
+    # Check jobs for GPU-related errors
         gpu_error_found = False
         for job in supabase_inv.jobs or []:
-            job_state = job.get('state')
+        job_state = job.get('state')
             if job_state in ['error', 'failed']:
                 # If segmentation job failed, assume GPU issue
-                job_tool_id = job.get('tool_id', '')
+        job_tool_id = job.get('tool_id', '')
                 if 'segmentanytree' in job_tool_id.lower():
                     gpu_error_found = True
                     logger.error("❌ SegmentAnyTree job failed - GPU likely unavailable")
@@ -181,89 +181,35 @@ def test_segmentation_workflow(
     logger.info(f"📊 Finished at: {supabase_inv.finished_at}")
     logger.info(f"📊 Jobs count: {len(supabase_inv.jobs or [])}")
     
-    # Step 8: Verify all 4 exported product types in S3/MinIO products bucket
-    logger.info("🔍 Verifying all 4 exported product types in S3 products bucket...")
+    # Step 8: Verify segmented LAZ exported to S3 products bucket
+    logger.info("🔍 Verifying segmented LAZ in S3 products bucket...")
     
     try:
-        # Get dataset_item_id to construct expected S3 paths
+        # Get dataset_item_id to construct expected S3 path
         dataset_item_resp = supabase_client.client.table("dataset_items").select("id").eq("dataset_id", test_remote_file.id).limit(1).execute()
         if not dataset_item_resp.data:
-            logger.warning("⚠️ Could not get dataset_item_id for S3 verification")
-        else:
-            dataset_item_id = dataset_item_resp.data[0]["id"]
-            base_path = f"{test_remote_file.id}/{dataset_item_id}"
-            
-            # 1. Verify standardized LAZ
-            logger.info("📂 Checking standardized LAZ...")
-            std_key = f"standard/{base_path}/Standardized Point Cloud.laz"
-            try:
-                response = storage_client.client.head_object(
-                    Bucket="3dtrees-tool-products",
-                    Key=std_key
-                )
-                logger.info(f"✅ Standardized LAZ: {std_key} ({response.get('ContentLength', 0)} bytes)")
-                assert response.get('ContentLength', 0) > 0, f"Standardized LAZ is empty"
-            except storage_client.client.exceptions.NoSuchKey:
-                logger.warning(f"⚠️ Standardized LAZ not found: {std_key}")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not verify standardized LAZ: {e}")
-            
-            # 2. Verify overview files (multiple files)
-            logger.info("📂 Checking overview files...")
-            overview_prefix = f"overviews/{base_path}/"
-            try:
-                response = storage_client.client.list_objects_v2(
-                    Bucket="3dtrees-tool-products",
-                    Prefix=overview_prefix
-                )
-                if 'Contents' in response and len(response['Contents']) > 0:
-                    overview_files = [obj['Key'] for obj in response['Contents']]
-                    logger.info(f"✅ Overview files: {len(overview_files)} files found")
-                    for file in overview_files[:5]:  # Log first 5
-                        logger.info(f"   - {file}")
-                else:
-                    logger.warning(f"⚠️ No overview files found at {overview_prefix}")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not verify overview files: {e}")
-            
-            # 3. Verify segmented LAZ
-            logger.info("📂 Checking segmented LAZ...")
-            seg_key = f"segmentation/{base_path}/Segmented Point Cloud.laz"
-            try:
-                response = storage_client.client.head_object(
-                    Bucket="3dtrees-tool-products",
-                    Key=seg_key
-                )
-                logger.info(f"✅ Segmented LAZ: {seg_key} ({response.get('ContentLength', 0)} bytes)")
-                assert response.get('ContentLength', 0) > 0, f"Segmented LAZ is empty"
-            except storage_client.client.exceptions.NoSuchKey:
-                logger.warning(f"⚠️ Segmented LAZ not found: {seg_key}")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not verify segmented LAZ: {e}")
-            
-            # 4. Verify 3D Tiles (tileset.json + .pnts files)
-            logger.info("📂 Checking 3D Tiles...")
-            tiles_prefix = f"3dtiles/{base_path}/"
-            try:
-                response = storage_client.client.list_objects_v2(
-                    Bucket="3dtrees-tool-products",
-                    Prefix=tiles_prefix
-                )
-                if 'Contents' in response and len(response['Contents']) > 0:
-                    tile_files = [obj['Key'] for obj in response['Contents']]
-                    tileset_json = [f for f in tile_files if 'tileset.json' in f]
-                    pnts_files = [f for f in tile_files if '.pnts' in f]
-                    
-                    logger.info(f"✅ 3D Tiles: {len(tile_files)} total files")
-                    logger.info(f"   - tileset.json: {'found' if tileset_json else 'NOT FOUND'}")
-                    logger.info(f"   - .pnts tiles: {len(pnts_files)} files")
-                else:
-                    logger.warning(f"⚠️ No 3D Tiles found at {tiles_prefix}")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not verify 3D Tiles: {e}")
-    
+            pytest.fail(f"Could not get dataset_item_id for dataset {test_remote_file.id}")
+        dataset_item_id = dataset_item_resp.data[0]["id"]
+        
+        # Verify segmented LAZ at: segmentation/{dataset_id}/{dataset_item_id}/segmented.laz
+        seg_key = f"segmentation/{test_remote_file.id}/{dataset_item_id}/segmented.laz"
+        logger.info(f"📂 Checking segmented LAZ at: {seg_key}")
+        
+        try:
+            response = storage_client.client.head_object(
+                Bucket="3dtrees-tool-products",
+                Key=seg_key
+            )
+            file_size = response.get('ContentLength', 0)
+            logger.info(f"✅ Segmented LAZ found: {seg_key} ({file_size:,} bytes)")
+            assert file_size > 0, f"Segmented LAZ is empty"
+        except storage_client.client.exceptions.NoSuchKey:
+            pytest.fail(f"❌ Segmented LAZ not found at expected path: {seg_key}")
+        except Exception as e:
+            pytest.fail(f"❌ Error verifying segmented LAZ: {e}")
+        
     except Exception as e:
-        logger.warning(f"⚠️ Export verification failed: {e}")
+        pytest.fail(f"❌ Export verification failed: {e}")
     
     logger.info("✅ Segmentation workflow End-to-End test PASSED!")
 
