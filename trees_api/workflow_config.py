@@ -25,7 +25,14 @@ logger = logging.getLogger("uvicorn")
 # Pattern keys are used for matching (case-insensitive, supports regex)
 WORKFLOW_EXPORT_ANNOTATIONS = {
     "Standard": {
-        "export standardized": "standard/{dataset_id}/{dataset_item_id}/"
+        "export standardized": "standard/{dataset_id}/{dataset_item_id}/",
+        "export raw header": "standard/{dataset_id}/{dataset_item_id}/",
+        "export standard header": "standard/{dataset_id}/{dataset_item_id}/",
+        "export.*log": "standard/{dataset_id}/{dataset_item_id}/",
+        "export.*convex": "standard/{dataset_id}/{dataset_item_id}/"
+    },
+    "PdalMetadata": {
+        "export metadata": "metadata/{dataset_id}/{dataset_item_id}/"
     },
     "Segmentation": {
         "export segmented": "segmentation/{dataset_id}/{dataset_item_id}/"

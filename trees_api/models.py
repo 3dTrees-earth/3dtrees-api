@@ -19,6 +19,7 @@ class Dataset(BaseModel):
 
 class WorkflowName(StrEnum):
     STANDARD = "Standard"
+    PDAL_METADATA = "PdalMetadata"
     OVERVIEW = "Overviews"
     SEGMENTATION = "Segmentation"
     PY3DTILES = "Py3DTiles"
