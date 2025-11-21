@@ -1,0 +1,117 @@
+{
+    "a_galaxy_workflow": "true",
+    "annotation": "Extract metadata from LAZ files using PDAL and export to S3",
+    "comments": [],
+    "creator": [
+        {
+            "class": "Person",
+            "identifier": "0000-0002-0424-2651",
+            "name": "Mirko Mälicke"
+        }
+    ],
+    "format-version": "0.1",
+    "license": "CC-BY-4.0",
+    "name": "PdalMetadata",
+    "report": {
+        "markdown": "\n# Workflow Execution Report\n\n## Workflow Inputs\n```galaxy\ninvocation_inputs()\n```\n\n## Workflow Outputs\n```galaxy\ninvocation_outputs()\n```\n\n## Workflow\n```galaxy\nworkflow_display()\n```\n"
+    },
+    "steps": {
+        "0": {
+            "annotation": "",
+            "content_id": null,
+            "errors": null,
+            "id": 0,
+            "input_connections": {},
+            "inputs": [
+                {
+                    "description": "",
+                    "name": "LAS / LAZ File"
+                }
+            ],
+            "label": "LAS / LAZ File",
+            "name": "Input dataset",
+            "outputs": [],
+            "position": {
+                "left": 0,
+                "top": 20
+            },
+            "tool_id": null,
+            "tool_state": "{\"optional\": false, \"format\": [\"laz\", \"las\"], \"tag\": null}",
+            "tool_version": null,
+            "type": "data_input",
+            "uuid": "7ee7561c-692e-4a20-9668-3f8012fdc0bd",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "1": {
+            "annotation": "",
+            "content_id": "3dtrees_pdal_metadata",
+            "errors": null,
+            "id": 1,
+            "input_connections": {
+                "input": {
+                    "id": 0,
+                    "output_name": "output"
+                }
+            },
+            "inputs": [],
+            "label": "3DTrees PDAL Metadata Extraction",
+            "name": "3DTrees PDAL Metadata Extraction",
+            "outputs": [
+                {
+                    "name": "metadata",
+                    "type": "json"
+                }
+            ],
+            "position": {
+                "left": 280,
+                "top": 20
+            },
+            "post_job_actions": {},
+            "tool_id": "3dtrees_pdal_metadata",
+            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"sample_size\": 5000}",
+            "tool_version": "1.0.0",
+            "type": "tool",
+            "uuid": "139869a2-edf0-441e-a11b-7d205baf3457",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "2": {
+            "annotation": "Export metadata JSON to S3 products bucket",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 2,
+            "input_connections": {
+                "export_type|infiles": {
+                    "id": 1,
+                    "output_name": "metadata"
+                }
+            },
+            "inputs": [],
+            "label": "Export Metadata",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 560,
+                "top": 20
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "a4ab928e-351e-4708-a5b5-1c52957ab883",
+            "when": null,
+            "workflow_outputs": []
+        }
+    },
+    "tags": [],
+    "uuid": "8c457de6-d3d5-4292-a7f9-b0ba592b5f89",
+    "version": 1
+}
+
