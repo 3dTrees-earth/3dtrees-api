@@ -562,3 +562,51 @@ class SupabaseClient:
             
         except Exception as e:
             raise RuntimeError(f"Failed to get finished unsynced workflow invocations: {e}") from e
+    
+    def upsert_product_metadata(
+        self,
+        table: str,
+        dataset_item_id: int,
+        data: Dict[str, Any]
+    ) -> None:
+        """
+        Upsert metadata into a product table (standard, overviews, segmentations, tilesets).
+        
+        This method checks if a row exists for the given dataset_item_id and either updates
+        the existing row or inserts a new one.
+        
+        Args:
+            table: Name of the product table to update
+            dataset_item_id: ID of the dataset item
+            data: Dictionary of field values to upsert
+            
+        Raises:
+            RuntimeError: If not connected to Supabase or operation fails
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            # Check if row exists
+            existing = (
+                self.client.table(table)
+                .select("id")
+                .eq("dataset_item_id", dataset_item_id)
+                .execute()
+            )
+            
+            if existing.data:
+                # Update existing row
+                logger.debug(f"Updating existing {table} record for dataset_item_id {dataset_item_id}")
+                self.client.table(table).update(data).eq("dataset_item_id", dataset_item_id).execute()
+            else:
+                # Insert new row
+                logger.debug(f"Inserting new {table} record for dataset_item_id {dataset_item_id}")
+                data["dataset_item_id"] = dataset_item_id
+                self.client.table(table).insert(data).execute()
+            
+            logger.info(f"Successfully upserted {table} metadata for dataset_item_id {dataset_item_id}")
+        
+        except Exception as e:
+            logger.error(f"Error upserting {table} metadata for dataset_item_id {dataset_item_id}: {e}")
+            raise RuntimeError(f"Failed to upsert {table} metadata: {e}") from e
