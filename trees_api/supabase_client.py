@@ -300,23 +300,25 @@ class SupabaseClient:
         
         return Dataset.model_validate(dataset_dict)
 
-    def create_workflow_invocation(self, workflow_uuid: str, dataset_id: int, workflow_name: str) -> WorkflowInvocation:
+    def create_workflow_invocation(self, workflow_uuid: str, dataset_id: int, workflow_name: str, dataset_item_id: Optional[int] = None) -> WorkflowInvocation:
         if not self.client:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
         
-        # Get dataset_item_id from dataset_id (for single-file datasets, get first item)
-        dataset_item_resp = (
-            self.client.table("dataset_items")
-            .select("id")
-            .eq("dataset_id", dataset_id)
-            .limit(1)
-            .execute()
-        )
-        
-        if not dataset_item_resp.data:
-            raise ValueError(f"No dataset_item found for dataset_id {dataset_id}")
-        
-        dataset_item_id = dataset_item_resp.data[0]["id"]
+        # Use provided dataset_item_id, or fall back to first item in dataset (legacy behavior)
+        if dataset_item_id is None:
+            # Get dataset_item_id from dataset_id (for single-file datasets, get first item)
+            dataset_item_resp = (
+                self.client.table("dataset_items")
+                .select("id")
+                .eq("dataset_id", dataset_id)
+                .limit(1)
+                .execute()
+            )
+            
+            if not dataset_item_resp.data:
+                raise ValueError(f"No dataset_item found for dataset_id {dataset_id}")
+            
+            dataset_item_id = dataset_item_resp.data[0]["id"]
         
         response = self.client.table(self.invocations_table).insert({
             "dataset_item_id": dataset_item_id,

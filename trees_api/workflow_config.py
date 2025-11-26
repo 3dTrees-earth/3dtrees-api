@@ -205,13 +205,14 @@ def build_workflow_parameters(
     supabase_client: "SupabaseClient", 
     workflow_name: str,
     dataset_id: int,
+    dataset_item_id: Optional[int] = None,
     bucket: str = "products-storage"
 ) -> Dict[int, Dict[str, str]]:
     """
     Build workflow parameters with dynamic step ID resolution.
     
     This function:
-    1. Queries Supabase for the dataset_item_id
+    1. Uses provided dataset_item_id or queries Supabase for it
     2. Queries Galaxy for actual workflow step IDs (annotation-based)
     3. Builds parameter dict with integer keys (Galaxy step IDs) and export paths
     
@@ -220,6 +221,7 @@ def build_workflow_parameters(
         supabase_client: Connected Supabase client
         workflow_name: Name of the workflow
         dataset_id: ID of the dataset to process
+        dataset_item_id: Optional specific dataset_item_id (for multi-file datasets)
         bucket: S3 bucket name (default: "products-storage")
         
     Returns:
@@ -232,16 +234,18 @@ def build_workflow_parameters(
         {3: {"d_uri": "gxfiles://products-storage/standard/123/456/"}}
     """
     try:
-        # Get dataset_item_id from Supabase
-        dataset_item_resp = supabase_client.client.table("dataset_items")\
-            .select("id").eq("dataset_id", dataset_id).limit(1).execute()
+        # Use provided dataset_item_id or get first one from Supabase
+        if dataset_item_id is None:
+            dataset_item_resp = supabase_client.client.table("dataset_items")\
+                .select("id").eq("dataset_id", dataset_id).limit(1).execute()
+            
+            if not dataset_item_resp.data:
+                logger.warning(f"No dataset_item found for dataset {dataset_id}")
+                return {}
+            
+            dataset_item_id = dataset_item_resp.data[0]["id"]
         
-        if not dataset_item_resp.data:
-            logger.warning(f"No dataset_item found for dataset {dataset_id}")
-            return {}
-        
-        dataset_item_id = dataset_item_resp.data[0]["id"]
-        logger.debug(f"Found dataset_item_id {dataset_item_id} for dataset {dataset_id}")
+        logger.debug(f"Using dataset_item_id {dataset_item_id} for dataset {dataset_id}")
         
     except Exception as e:
         logger.error(f"Failed to get dataset_item_id for dataset {dataset_id}: {e}")
