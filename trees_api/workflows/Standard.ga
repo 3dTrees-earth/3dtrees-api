@@ -60,7 +60,7 @@
             "outputs": [
                 {
                     "name": "pc_standardized",
-                    "type": "binary"
+                    "type": "laz"
                 }
             ],
             "position": {
@@ -88,7 +88,7 @@
                 }
             },
             "inputs": [],
-            "label": "Export to S3",
+            "label": "Export Standardized LAZ",
             "name": "Export datasets",
             "outputs": [
                 {
@@ -100,31 +100,17 @@
                 "left": 560,
                 "top": 20
             },
-            "post_job_actions": {
-                "ChangeDatatypeActionpc_standardized": {
-                    "action_arguments": {
-                        "newtype": "laz"
-                    },
-                    "action_type": "ChangeDatatypeAction",
-                    "output_name": "pc_standardized"
-                }
-            },
+            "post_job_actions": {},
             "tool_id": "export_remote",
             "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "a1b2c3d4-e5f6-4789-a012-3456789abcde",
             "when": null,
-            "workflow_outputs": [
-                {
-                    "label": "export_logs",
-                    "output_name": "out",
-                    "uuid": "e5f6a7b8-c9d0-4e12-b345-6789abcdef01"
-                }
-            ]
+            "workflow_outputs": []
         }
     },
     "tags": [],
     "uuid": "f7b05dcf-25d7-4546-bcf5-1f29cdb4c180",
-    "version": 2
+    "version": 4
 }
