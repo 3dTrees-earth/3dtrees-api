@@ -87,7 +87,7 @@ WORKFLOW_METADATA_INGESTION = {
         "overviews": {
             "s3_path_template": "overviews/{dataset_id}/{dataset_item_id}/",
             "target_table": "overviews",
-            "url_template": "{storage_endpoint}/products-storage/overviews/{dataset_id}/{dataset_item_id}/",
+            "url_template": "{storage_endpoint}/{bucket_name}/overviews/{dataset_id}/{dataset_item_id}/",
             "detection": {
                 "files": ["overviews/{dataset_id}/{dataset_item_id}/top_view_00.png"],
                 "flag": "has_overviews"
@@ -96,7 +96,7 @@ WORKFLOW_METADATA_INGESTION = {
         "segmentation": {
             "s3_path_template": "segmentation/{dataset_id}/{dataset_item_id}/",
             "target_table": "segmentations",
-            "url_template": "{storage_endpoint}/products-storage/segmentation/{dataset_id}/{dataset_item_id}/segmented.laz",
+            "url_template": "{storage_endpoint}/{bucket_name}/segmentation/{dataset_id}/{dataset_item_id}/segmented.laz",
             "detection": {
                 "files": ["segmentation/{dataset_id}/{dataset_item_id}/segmented.laz"],
                 "flag": "has_segmentation"
@@ -105,7 +105,7 @@ WORKFLOW_METADATA_INGESTION = {
         "3dtiles": {
             "s3_path_template": "3dtiles/{dataset_id}/{dataset_item_id}/",
             "target_table": "tilesets",
-            "url_template": "{storage_endpoint}/products-storage/3dtiles/{dataset_id}/{dataset_item_id}/",
+            "url_template": "{storage_endpoint}/{bucket_name}/3dtiles/{dataset_id}/{dataset_item_id}/",
             "detection": {
                 "files": ["3dtiles/{dataset_id}/{dataset_item_id}/tileset.json"],
                 "flag": "has_3dtiles"

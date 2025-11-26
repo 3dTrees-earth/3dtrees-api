@@ -4,10 +4,16 @@ Status synchronization module for 3DTrees API.
 
 This module is designed to be run as a cronjob to:
 1. Connect to Galaxy and check workflow invocations
-2. Compare Galaxy status with Supabase database status
+2. Compare Galaxy status with Supabase database status  
 3. Update Supabase when statuses differ
-4. Detect products in S3 and ingest metadata
-5. Sync results from completed workflows to S3 storage
+4. Detect products in S3 and ingest small metadata JSON files
+
+Note: This module does NOT download/upload actual data files from/to S3.
+Galaxy uses remote file sources to read input data directly from S3,
+and uses the export tool to write outputs directly back to S3.
+The status pooler only:
+- Checks if files exist in S3 (to detect when products are ready)
+- Downloads small JSON metadata files (~40KB) to extract fields for Supabase
 
 Usage:
     # Run once (cron mode)
@@ -19,10 +25,6 @@ Usage:
     
     # Run from Docker container (as cronjob)
     docker compose run api python status.py
-    
-    # Run sync_results function standalone for a specific invocation
-    from result_sync import sync_results
-    sync_results(galaxy_client, supabase_client, storage_client, "invocation_id")
 
 Environment Variables Required:
     - GALAXY_URL, GALAXY_EMAIL, GALAXY_PASSWORD (or GALAXY_API_KEY)
@@ -46,7 +48,8 @@ from trees_api.storage_client import StorageClient
 from trees_api.config import GalaxyConfig, SupabaseConfig, StorageConfig
 from trees_api.status_sync import sync_workflow_statuses
 from trees_api.product_sync import sync_workflow_products
-from trees_api.result_sync import sync_results, sync_completed_workflows
+# Note: result_sync is NOT imported - Galaxy export tool writes outputs directly to S3
+# so we don't need to download from Galaxy history and re-upload
 
 # Configure logging
 logging.basicConfig(
@@ -95,27 +98,6 @@ def get_connected_clients():
     return galaxy_client, supabase_client, storage_client
 
 
-def sync_results_for_invocation(invocation_id: str) -> bool:
-    """
-    Standalone function to sync results for a specific invocation.
-    This can be called from other parts of the system.
-    
-    Args:
-        invocation_id: ID of the workflow invocation to sync
-        
-    Returns:
-        True if sync was successful, False otherwise
-    """
-    try:
-        galaxy_client, supabase_client, storage_client = get_connected_clients()
-        result = sync_results(galaxy_client, supabase_client, storage_client, invocation_id)
-        supabase_client.sign_out()
-        return result
-    except Exception as e:
-        logger.error(f"Error syncing results for invocation {invocation_id}: {e}")
-        return False
-
-
 def run_sync_once():
     """
     Run a single synchronization cycle.
@@ -139,29 +121,31 @@ def run_sync_once():
         status_stats = sync_workflow_statuses(galaxy_client, supabase_client)
         
         # SLOW: Sync products with threading (~5-30 seconds depending on S3 and workflows)
+        # This only checks for file existence and downloads small JSON metadata files
+        # Galaxy's export tool already writes the actual data files directly to S3
         logger.info("Syncing workflow products from S3...")
         product_stats = sync_workflow_products(
             galaxy_client, supabase_client, storage_client, storage_config
         )
         
-        # Sync results for completed workflows (existing functionality)
-        logger.info("Syncing results for completed workflows...")
-        result_stats = sync_completed_workflows(galaxy_client, supabase_client, storage_client)
+        # Note: We do NOT sync results from Galaxy history to S3 here because:
+        # 1. Galaxy uses remote file sources to read input data directly from S3
+        # 2. Galaxy uses the export tool to write outputs directly back to S3
+        # 3. No need to download from Galaxy and re-upload - data is already in S3
         
         # Log final statistics
         logger.info("Status synchronization completed successfully")
         logger.info(f"Status sync stats: {status_stats}")
         logger.info(f"Product sync stats: {product_stats}")
-        logger.info(f"Result sync stats: {result_stats}")
         
-        # Cleanup
-        supabase_client.sign_out()
-        logger.info("Supabase client signed out")
+        # Note: Don't sign out - this would invalidate ALL sessions for this user
+        # including browser sessions. The status pooler shares credentials with
+        # the frontend user for RLS purposes.
+        logger.info("Sync cycle completed (keeping session active)")
         
         return {
             "status_stats": status_stats,
             "product_stats": product_stats,
-            "result_stats": result_stats,
             "success": True
         }
         

@@ -141,6 +141,7 @@ def ingest_product_metadata(
     if url_template:
         url = url_template.format(
             storage_endpoint=storage_config.public_endpoint,
+            bucket_name=storage_config.products_bucket,
             dataset_id=dataset_id,
             dataset_item_id=dataset_item_id
         )
