@@ -25,11 +25,7 @@ logger = logging.getLogger("uvicorn")
 # Pattern keys are used for matching (case-insensitive, supports regex)
 WORKFLOW_EXPORT_ANNOTATIONS = {
     "Standard": {
-        "export standardized": "standard/{dataset_id}/{dataset_item_id}/",
-        "export raw header": "standard/{dataset_id}/{dataset_item_id}/",
-        "export standard header": "standard/{dataset_id}/{dataset_item_id}/",
-        "export.*log": "standard/{dataset_id}/{dataset_item_id}/",
-        "export.*convex": "standard/{dataset_id}/{dataset_item_id}/"
+        "export standardized": "standard/{dataset_id}/{dataset_item_id}/"
     },
     "PdalMetadata": {
         "export metadata": "metadata/{dataset_id}/{dataset_item_id}/"
@@ -48,14 +44,100 @@ WORKFLOW_EXPORT_ANNOTATIONS = {
         "export.*points.*tiles|points.*subdirectory": "3dtiles/{dataset_id}/{dataset_item_id}/points/"
     },
     "EndToEndPipeline": {
-        "standardized laz": "standard/{dataset_id}/{dataset_item_id}/",
-        "top view": "overviews/{dataset_id}/{dataset_item_id}/",
-        "section view": "overviews/{dataset_id}/{dataset_item_id}/",
-        "animation|gif": "overviews/{dataset_id}/{dataset_item_id}/",
-        "segmented laz": "segmentation/{dataset_id}/{dataset_item_id}/",
-        "tileset": "3dtiles/{dataset_id}/{dataset_item_id}/",
-        "preview": "3dtiles/{dataset_id}/{dataset_item_id}/",
-        "points.*tiles|points.*subdirectory": "3dtiles/{dataset_id}/{dataset_item_id}/points/"
+        "export raw metadata.*s3": "metadata/{dataset_id}/{dataset_item_id}/",
+        "export standardized laz.*s3 products": "standard/{dataset_id}/{dataset_item_id}/",
+        "export standardized metadata.*s3": "metadata/{dataset_id}/{dataset_item_id}/",
+        "export top view": "overviews/{dataset_id}/{dataset_item_id}/",
+        "export section view": "overviews/{dataset_id}/{dataset_item_id}/",
+        "export overview animation": "overviews/{dataset_id}/{dataset_item_id}/",
+        "export segmented laz": "segmentation/{dataset_id}/{dataset_item_id}/",
+        "export tileset": "3dtiles/{dataset_id}/{dataset_item_id}/",
+        "export preview": "3dtiles/{dataset_id}/{dataset_item_id}/",
+        "export points tiles": "3dtiles/{dataset_id}/{dataset_item_id}/points/"
+    }
+}
+
+
+# Workflow metadata ingestion configuration
+# Maps workflow names to metadata extraction and database ingestion specs
+WORKFLOW_METADATA_INGESTION = {
+    "EndToEndPipeline": {
+        "standard": {
+            "metadata_files": ["raw_metadata.json", "standardized_metadata.json"],
+            "s3_path_template": "metadata/{dataset_id}/{dataset_item_id}/",
+            "target_table": "standard",
+            "field_mappings": {
+                "raw_metadata.json": {
+                    "pdal_info_raw": lambda data: data,  # Store entire JSON
+                },
+                "standardized_metadata.json": {
+                    "pdal_info_standard": lambda data: data,
+                    "convex_hull": lambda data: data.get("summary", {}).get("boundary", {}).get("boundary_wgs84_geojson")
+                }
+            },
+            "detection": {
+                "files": [
+                    "metadata/{dataset_id}/{dataset_item_id}/raw_metadata.json",
+                    "metadata/{dataset_id}/{dataset_item_id}/standardized_metadata.json",
+                    "standard/{dataset_id}/{dataset_item_id}/standardized.laz"
+                ],
+                "flag": "has_standardisation"
+            }
+        },
+        "overviews": {
+            "s3_path_template": "overviews/{dataset_id}/{dataset_item_id}/",
+            "target_table": "overviews",
+            "url_template": "{storage_endpoint}/products-storage/overviews/{dataset_id}/{dataset_item_id}/",
+            "detection": {
+                "files": ["overviews/{dataset_id}/{dataset_item_id}/top_view_00.png"],
+                "flag": "has_overviews"
+            }
+        },
+        "segmentation": {
+            "s3_path_template": "segmentation/{dataset_id}/{dataset_item_id}/",
+            "target_table": "segmentations",
+            "url_template": "{storage_endpoint}/products-storage/segmentation/{dataset_id}/{dataset_item_id}/segmented.laz",
+            "detection": {
+                "files": ["segmentation/{dataset_id}/{dataset_item_id}/segmented.laz"],
+                "flag": "has_segmentation"
+            }
+        },
+        "3dtiles": {
+            "s3_path_template": "3dtiles/{dataset_id}/{dataset_item_id}/",
+            "target_table": "tilesets",
+            "url_template": "{storage_endpoint}/products-storage/3dtiles/{dataset_id}/{dataset_item_id}/",
+            "detection": {
+                "files": ["3dtiles/{dataset_id}/{dataset_item_id}/tileset.json"],
+                "flag": "has_3dtiles"
+            }
+        }
+    },
+    "Standard": {
+        "standard": {
+            "s3_path_template": "standard/{dataset_id}/{dataset_item_id}/",
+            "target_table": "standard",
+            "detection": {
+                "files": ["standard/{dataset_id}/{dataset_item_id}/standardized.laz"],
+                "flag": "has_standardisation"
+            }
+        }
+    },
+    "PdalMetadata": {
+        "metadata": {
+            "metadata_files": ["raw_metadata.json"],
+            "s3_path_template": "metadata/{dataset_id}/{dataset_item_id}/",
+            "target_table": "standard",
+            "field_mappings": {
+                "raw_metadata.json": {
+                    "pdal_info_raw": lambda data: data,
+                    "convex_hull": lambda data: data.get("summary", {}).get("boundary", {}).get("boundary_wgs84_geojson")
+                }
+            },
+            "detection": {
+                "files": ["metadata/{dataset_id}/{dataset_item_id}/raw_metadata.json"],
+                "flag": "has_standardisation"
+            }
+        }
     }
 }
 

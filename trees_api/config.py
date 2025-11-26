@@ -71,6 +71,27 @@ class StorageConfig(BaseSettings):
         env_prefix="STORAGE_",
         extra="ignore",
     )
+    
+    @property
+    def public_endpoint(self) -> str:
+        """
+        Get public-facing storage endpoint for frontend URLs.
+        This is the URL that frontend users will use to access files.
+        
+        Returns:
+            Storage endpoint URL (e.g., "http://localhost:9500" or "https://storage.googleapis.com")
+        """
+        return self.url
+    
+    @property
+    def products_bucket(self) -> str:
+        """
+        Get products bucket name for convenience.
+        
+        Returns:
+            Products bucket name
+        """
+        return self.bucket_name_products
 
 
 class APIConfig(BaseSettings):
