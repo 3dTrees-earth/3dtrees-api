@@ -164,27 +164,29 @@ def test_standard_workflow(
         if dataset_item_resp.data:
             dataset_item_id = dataset_item_resp.data[0]["id"]
             # Expected path matches runner structure: standard/{dataset_id}/{dataset_item_id}/
-            # Filename is Galaxy output label + extension: "standardized.laz"
-            expected_key = f"standard/{test_remote_file.id}/{dataset_item_id}/standardized.laz"
+            base_path = f"standard/{test_remote_file.id}/{dataset_item_id}"
             
-            logger.info(f"📂 Checking for exported file: {expected_key}")
+            # Only expect standardized.laz - metadata is handled by separate PDAL tool
+            expected_key = f"{base_path}/standardized.laz"
+            logger.info(f"📂 Checking for standardized point cloud: {expected_key}")
             
-            # Check if file exists in products bucket
             try:
                 response = storage_client.client.head_object(
                     Bucket="3dtrees-tool-products",
                     Key=expected_key
                 )
                 file_size = response.get('ContentLength', 0)
-                logger.info(f"✅ File exported to S3 products bucket: {expected_key} ({file_size} bytes)")
+                logger.info(f"✅ standardized.laz: {expected_key} ({file_size:,} bytes)")
                 
                 # Verify file size is reasonable (should be > 0)
                 assert file_size > 0, f"Exported file is empty: {expected_key}"
                 
+                logger.info(f"✅ Standard workflow output verified successfully!")
+                
             except storage_client.client.exceptions.NoSuchKey:
-                pytest.fail(f"❌ Exported file not found in S3 products bucket: {expected_key}")
+                pytest.fail(f"❌ standardized.laz not found in S3 products bucket: {expected_key}")
             except Exception as e:
-                logger.warning(f"⚠️ Could not verify export (may still be processing): {e}")
+                pytest.fail(f"❌ Could not verify standardized.laz: {e}")
         else:
             logger.warning(f"⚠️ Could not get dataset_item_id for verification")
     except Exception as e:
