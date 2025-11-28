@@ -45,8 +45,13 @@ class WorkflowInvocation(BaseModel):
     jobs: list = []
     messages: list = []
     parameters: dict = {}  # User-defined parameters for the workflow
+    
+    # Legacy fields (no longer used - Galaxy exports directly to S3)
     results_synced: bool = False
     results_synced_at: Optional[datetime] = None
+    
+    # Active field: set by product_sync when all products detected in S3
+    metadata_synced_at: Optional[datetime] = None
 
     def has_jobs_changed(self, other_jobs: list) -> bool:
         """Check if jobs have changed by comparing length and job states"""
