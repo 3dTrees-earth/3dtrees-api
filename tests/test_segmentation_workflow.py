@@ -54,12 +54,12 @@ def test_segmentation_workflow(
     
     # Step 1: Verify dataset exists in S3 and DB
     logger.info(f"📦 Dataset ID: {test_remote_file.id}")
-    logger.info(f"📍 S3 Path: s3://3dtrees-tool-raw/{test_remote_file.bucket_path}")
+    logger.info(f"📍 S3 Path: s3://3dtrees-raw/{test_remote_file.bucket_path}")
     
     # Verify file exists in raw bucket
     try:
         storage_client.client.head_object(
-            Bucket="3dtrees-tool-raw",
+            Bucket="3dtrees-raw",
             Key=test_remote_file.bucket_path
         )
         logger.info(f"✅ File exists in S3 raw-storage")
@@ -90,7 +90,7 @@ def test_segmentation_workflow(
     logger.info("⏳ Monitoring workflow status via status.py poller...")
     logger.info("⚠️  Segmentation workflow (1 tool + 1 export) may take 2-3 minutes")
     
-    max_attempts = 40  # 40 × 5 seconds = ~3 minutes max
+    max_attempts = 120  # 120 × 5 seconds = ~10 minutes max (GPU jobs can be slow)
     workflow_finished = False
     final_status = None
     supabase_inv = None
@@ -197,7 +197,7 @@ def test_segmentation_workflow(
         
         try:
             response = storage_client.client.head_object(
-                Bucket="3dtrees-tool-products",
+                Bucket="3dtrees-products",
                 Key=seg_key
             )
             file_size = response.get('ContentLength', 0)

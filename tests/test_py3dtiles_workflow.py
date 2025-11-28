@@ -47,12 +47,12 @@ def test_py3dtiles_workflow(
     
     # Step 1: Verify dataset exists in S3 and DB
     logger.info(f"📦 Dataset ID: {test_remote_file.id}")
-    logger.info(f"📍 S3 Path: s3://3dtrees-tool-raw/{test_remote_file.bucket_path}")
+    logger.info(f"📍 S3 Path: s3://3dtrees-raw/{test_remote_file.bucket_path}")
     
     # Verify file exists in raw bucket
     try:
         storage_client.client.head_object(
-            Bucket="3dtrees-tool-raw",
+            Bucket="3dtrees-raw",
             Key=test_remote_file.bucket_path
         )
         logger.info(f"✅ File exists in S3 raw-storage")
@@ -215,7 +215,7 @@ def test_py3dtiles_workflow(
         try:
             # Check if file exists in products-storage bucket using direct S3 API
             response = storage_client.client.list_objects_v2(
-                Bucket='3dtrees-tool-products',
+                Bucket='3dtrees-products',
                 Prefix=s3_key,
                 MaxKeys=1
             )
@@ -237,7 +237,7 @@ def test_py3dtiles_workflow(
         # Check for .pnts files in the points/ subdirectory
         points_path = f"{export_base_path}/points/"
         response = storage_client.client.list_objects_v2(
-            Bucket='3dtrees-tool-products',
+            Bucket='3dtrees-products',
             Prefix=points_path,
             MaxKeys=1000  # Need more to count all .pnts files
         )

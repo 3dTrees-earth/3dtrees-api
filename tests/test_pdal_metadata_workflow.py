@@ -52,12 +52,12 @@ def test_pdal_metadata_workflow(
     
     # Step 1: Verify dataset exists in S3 and DB
     logger.info(f"📦 Dataset ID: {test_remote_file.id}")
-    logger.info(f"📍 S3 Path: s3://3dtrees-tool-raw/{test_remote_file.bucket_path}")
+    logger.info(f"📍 S3 Path: s3://3dtrees-raw/{test_remote_file.bucket_path}")
     
     # Verify file exists in raw bucket
     try:
         storage_client.client.head_object(
-            Bucket="3dtrees-tool-raw",
+            Bucket="3dtrees-raw",
             Key=test_remote_file.bucket_path
         )
         logger.info(f"✅ File exists in S3 raw-storage")
@@ -172,7 +172,7 @@ def test_pdal_metadata_workflow(
             
             try:
                 response = storage_client.client.head_object(
-                    Bucket="3dtrees-tool-products",
+                    Bucket="3dtrees-products",
                     Key=expected_key
                 )
                 file_size = response.get('ContentLength', 0)
@@ -184,7 +184,7 @@ def test_pdal_metadata_workflow(
                 # Download and validate JSON content
                 logger.info("📥 Downloading and validating metadata JSON...")
                 obj = storage_client.client.get_object(
-                    Bucket="3dtrees-tool-products",
+                    Bucket="3dtrees-products",
                     Key=expected_key
                 )
                 metadata_content = obj['Body'].read().decode('utf-8')

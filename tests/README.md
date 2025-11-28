@@ -9,8 +9,8 @@ The tests are designed to match the production setup as closely as possible:
 ### Two-Bucket Storage System
 
 Tests use a two-bucket system matching production:
-- **RAW bucket** (`3dtrees-tool-raw`): Stores raw input data (like `frct-3dtrees-raw-dev` in production)
-- **PRODUCTS bucket** (`3dtrees-tool-products`): Stores processed outputs (like `frct-3dtrees-products-dev` in production)
+- **RAW bucket** (`3dtrees-raw`): Stores raw input data (like `frct-3dtrees-raw-dev` in production)
+- **PRODUCTS bucket** (`3dtrees-products`): Stores processed outputs (like `frct-3dtrees-products-dev` in production)
 
 ### Running Tests Locally
 
@@ -31,16 +31,16 @@ make galaxy-up       # Starts Galaxy
 # Access MinIO console at http://localhost:9501
 # Login: minioadmin / minioadmin
 # Create buckets:
-#   - 3dtrees-tool-raw
-#   - 3dtrees-tool-products
+#   - 3dtrees-raw
+#   - 3dtrees-products
 ```
 
 Or via CLI:
 ```bash
 docker run --rm --network host --entrypoint sh minio/mc -c "\
   mc alias set minio http://localhost:9500 minioadmin minioadmin && \
-  mc mb minio/3dtrees-tool-raw && \
-  mc mb minio/3dtrees-tool-products"
+  mc mb minio/3dtrees-raw && \
+  mc mb minio/3dtrees-products"
 ```
 
 **4. Run tests:**
@@ -106,7 +106,7 @@ docker compose run --rm --env-file .env.test api python -m pytest tests/ -v
 **Storage/MinIO issues:**
 - Verify MinIO is running: `curl http://localhost:9500/minio/health/live`
 - Check buckets exist: Access http://localhost:9501 (minioadmin/minioadmin)
-- Ensure both buckets are created: `3dtrees-tool-raw` and `3dtrees-tool-products`
+- Ensure both buckets are created: `3dtrees-raw` and `3dtrees-products`
 
 **Network issues:**
 - Tests use `network_mode: "host"` in docker-compose.yml

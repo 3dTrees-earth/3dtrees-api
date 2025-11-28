@@ -62,12 +62,12 @@ def test_endtoend_workflow(
     
     # Step 1: Verify dataset exists in S3 and DB
     logger.info(f"📦 Dataset ID: {test_remote_file.id}")
-    logger.info(f"📍 S3 Path: s3://3dtrees-tool-raw/{test_remote_file.bucket_path}")
+    logger.info(f"📍 S3 Path: s3://3dtrees-raw/{test_remote_file.bucket_path}")
     
     # Verify file exists in raw bucket
     try:
         storage_client.client.head_object(
-            Bucket="3dtrees-tool-raw",
+            Bucket="3dtrees-raw",
             Key=test_remote_file.bucket_path
         )
         logger.info(f"✅ File exists in S3 raw-storage")
@@ -224,7 +224,7 @@ def test_endtoend_workflow(
     raw_metadata_key = f"metadata/{dataset_id}/{dataset_item_id}/raw_metadata.json"
     try:
         response = storage_client.client.head_object(
-            Bucket="3dtrees-tool-products",
+            Bucket="3dtrees-products",
             Key=raw_metadata_key
         )
         file_size = response.get('ContentLength', 0)
@@ -232,7 +232,7 @@ def test_endtoend_workflow(
         
         # Download and validate JSON content
         obj = storage_client.client.get_object(
-            Bucket="3dtrees-tool-products",
+            Bucket="3dtrees-products",
             Key=raw_metadata_key
         )
         metadata_content = obj['Body'].read().decode('utf-8')
@@ -276,7 +276,7 @@ def test_endtoend_workflow(
     standard_key = f"standard/{dataset_id}/{dataset_item_id}/standardized.laz"
     try:
         response = storage_client.client.head_object(
-            Bucket="3dtrees-tool-products",
+            Bucket="3dtrees-products",
             Key=standard_key
         )
         file_size = response.get('ContentLength', 0)
@@ -294,7 +294,7 @@ def test_endtoend_workflow(
     standardized_metadata_key = f"metadata/{dataset_id}/{dataset_item_id}/standardized_metadata.json"
     try:
         response = storage_client.client.head_object(
-            Bucket="3dtrees-tool-products",
+            Bucket="3dtrees-products",
             Key=standardized_metadata_key
         )
         file_size = response.get('ContentLength', 0)
@@ -302,7 +302,7 @@ def test_endtoend_workflow(
         
         # Download and validate JSON content
         obj = storage_client.client.get_object(
-            Bucket="3dtrees-tool-products",
+            Bucket="3dtrees-products",
             Key=standardized_metadata_key
         )
         metadata_content = obj['Body'].read().decode('utf-8')
@@ -358,7 +358,7 @@ def test_endtoend_workflow(
         
         try:
             response = storage_client.client.list_objects_v2(
-                Bucket='3dtrees-tool-products',
+                Bucket='3dtrees-products',
                 Prefix=s3_key,
                 MaxKeys=1
             )
@@ -379,7 +379,7 @@ def test_endtoend_workflow(
     seg_key = f"segmentation/{dataset_id}/{dataset_item_id}/segmented.laz"
     try:
         response = storage_client.client.head_object(
-            Bucket="3dtrees-tool-products",
+            Bucket="3dtrees-products",
             Key=seg_key
         )
         file_size = response.get('ContentLength', 0)
@@ -401,7 +401,7 @@ def test_endtoend_workflow(
     tileset_key = f"{tiles_base_path}/tileset.json"
     try:
         response = storage_client.client.list_objects_v2(
-            Bucket='3dtrees-tool-products',
+            Bucket='3dtrees-products',
             Prefix=tileset_key,
             MaxKeys=1
         )
@@ -420,7 +420,7 @@ def test_endtoend_workflow(
     preview_key = f"{tiles_base_path}/preview.pnts"
     try:
         response = storage_client.client.list_objects_v2(
-            Bucket='3dtrees-tool-products',
+            Bucket='3dtrees-products',
             Prefix=preview_key,
             MaxKeys=1
         )
@@ -439,7 +439,7 @@ def test_endtoend_workflow(
     try:
         points_path = f"{tiles_base_path}/points/"
         response = storage_client.client.list_objects_v2(
-            Bucket='3dtrees-tool-products',
+            Bucket='3dtrees-products',
             Prefix=points_path,
             MaxKeys=1000  # Need more to count all .pnts files
         )
