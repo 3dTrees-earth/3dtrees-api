@@ -54,15 +54,23 @@ class SupabaseConfig(BaseSettings):
 
 
 class StorageConfig(BaseSettings):
-    """S3/MinIO storage configuration."""
+    """S3/MinIO storage configuration.
     
-    access_key: str = Field(description="Storage access key")
-    secret_key: str = Field(description="Storage secret key")
-    bucket_name: str = Field(default="3dtrees-tool-dev", description="Legacy single bucket name")
-    bucket_name_products: str = Field(default="3dtrees-tool-products", description="Products bucket name")
-    bucket_name_raw: str = Field(default="3dtrees-tool-raw", description="Raw data bucket name")
-    url: str = Field(default="https://storage.googleapis.com", description="Storage endpoint URL")
-    region: str = Field(default="eu", description="Storage region")
+    Local development defaults to MinIO at localhost:9500.
+    For production, set environment variables:
+        STORAGE_URL=https://s3.bwsfs.uni-freiburg.de
+        STORAGE_BUCKET_NAME_RAW=frct-3dtrees-raw-prod
+        STORAGE_BUCKET_NAME_PRODUCTS=frct-3dtrees-products-prod
+        STORAGE_REGION=fr-repl
+    """
+    
+    access_key: str = Field(default="minioadmin", description="Storage access key")
+    secret_key: str = Field(default="minioadmin", description="Storage secret key")
+    bucket_name: str = Field(default="3dtrees-dev", description="Legacy single bucket name")
+    bucket_name_products: str = Field(default="3dtrees-products", description="Products bucket name")
+    bucket_name_raw: str = Field(default="3dtrees-raw", description="Raw data bucket name")
+    url: str = Field(default="http://localhost:9500", description="Storage endpoint URL")
+    region: str = Field(default="us-east-1", description="Storage region")
     
     model_config = SettingsConfigDict(
         case_sensitive=False,
