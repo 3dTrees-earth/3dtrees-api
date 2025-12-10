@@ -59,7 +59,8 @@ async def lifespan(app: FastAPI):
     # Try to initialize all clients (but don't fail if they can't connect)
     connection_manager.connect_galaxy()
     connection_manager.connect_supabase()
-    connection_manager.connect_storage()
+    connection_manager.connect_storage()  # Processor storage (read raw, write products)
+    connection_manager.connect_uploader_storage()  # Uploader storage (write raw)
     
     # Start background retry task
     retry_task = await connection_manager.start_retry_task(interval=60)
@@ -101,88 +102,29 @@ class JobCreateRequest(BaseModel):
     parameters: Dict[str, Any] = {}
 
 
-# Helper functions for job creation
-def _import_dataset_from_storage(
-    galaxy: GalaxyClient,
-    supabase: SupabaseClient,
-    dataset_id: str,
-    history,
-    dataset_item_id: Optional[int] = None
-):
-    """
-    Import dataset from S3/MinIO into Galaxy history using file sources.
-    
-    Args:
-        galaxy: Connected Galaxy client
-        supabase: Connected Supabase client
-        dataset_id: ID of the dataset to import
-        history: Galaxy history object to import into
-        dataset_item_id: Optional specific dataset_item to import (for multi-file datasets)
-        
-    Returns:
-        Tuple of (imported dataset object from Galaxy, dataset_item_id used)
-        
-    Raises:
-        HTTPException: If dataset import fails
-    """
-    try:
-        # If dataset_item_id is provided, use that specific item
-        if dataset_item_id:
-            dataset_item = supabase.get_dataset_item(dataset_item_id)
-            if not dataset_item:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Dataset item {dataset_item_id} not found"
-                )
-            bucket_path = dataset_item.get('bucket_path') if isinstance(dataset_item, dict) else dataset_item.bucket_path
-            actual_item_id = dataset_item_id
-        else:
-            # Fall back to first item in dataset (legacy behavior)
-            database_dataset = supabase.get_dataset(dataset_id)
-            bucket_path = database_dataset.bucket_path
-            # Get the first dataset_item_id for this dataset
-            response = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
-            actual_item_id = response.data[0]["id"] if response.data else None
-        
-        # Construct file source URI using helper method
-        # bucket_path is like "LAS/Example_Platane.laz"
-        file_source_uri = galaxy.build_file_source_uri("raw-storage", bucket_path)
-        
-        logger.info(f"Importing dataset from file source: {file_source_uri} (item_id={actual_item_id})")
-        dataset = galaxy.import_from_file_source(history, file_source_uri)
-        galaxy.wait_for_upload(dataset)  # Wait for import to complete
-        
-        return dataset, actual_item_id
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Importing dataset {dataset_id} (item_id={dataset_item_id}) from file source failed: {e}"
-        ) from e
-
-
-def _invoke_and_record_workflow(
+def _invoke_workflow_with_file_source(
     galaxy: GalaxyClient,
     supabase: SupabaseClient,
     workflow_name: str,
     dataset_id: str,
-    dataset,
+    file_source_uri: str,
     history_name: str,
     workflow_parameters: Dict[int, Dict[str, str]],
     user_parameters: dict,
     dataset_item_id: Optional[int] = None
 ):
     """
-    Invoke Galaxy workflow and record invocation in Supabase.
+    Invoke Galaxy workflow using file source URI directly (no pre-import).
+    
+    Galaxy will fetch the file from the file source as part of workflow execution.
+    This is more efficient than pre-importing the file into history first.
     
     Args:
         galaxy: Connected Galaxy client
         supabase: Connected Supabase client
         workflow_name: Name of the workflow to invoke
-        dataset_id: ID of the dataset being processed
-        dataset: Galaxy dataset object (input for workflow)
+        dataset_id: ID of the dataset being processed (for Supabase record)
+        file_source_uri: File source URI for Galaxy to fetch
         history_name: Name of the Galaxy history
         workflow_parameters: Workflow step parameters (with integer keys)
         user_parameters: User-defined parameters to store
@@ -195,10 +137,10 @@ def _invoke_and_record_workflow(
         HTTPException: If workflow invocation or recording fails
     """
     try:
-        logger.info(f"Invoking workflow '{workflow_name}' with {len(workflow_parameters)} parameter(s) for item_id={dataset_item_id}")
-        invocation_result = galaxy.invoke_workflow_with_dataset(
+        logger.info(f"Invoking workflow '{workflow_name}' with file source: {file_source_uri} (item_id={dataset_item_id})")
+        invocation_result = galaxy.invoke_workflow_with_file_source(
             workflow_name=workflow_name,
-            dataset_id=dataset.id,
+            file_source_uri=file_source_uri,
             history_name=history_name,
             parameters=workflow_parameters if workflow_parameters else None
         )
@@ -206,7 +148,7 @@ def _invoke_and_record_workflow(
     except Exception as e:
         raise HTTPException(
             status_code=400,
-            detail=f"Invoking workflow {workflow_name} failed: {e}"
+            detail=f"Invoking workflow {workflow_name} with file source failed: {e}"
         ) from e
     
     # Record workflow invocation in Supabase
@@ -277,30 +219,52 @@ def create_job(
     supabase: Optional[SupabaseClient] = Depends(get_supabase_client),
     storage: Optional[StorageClient] = Depends(get_storage_client)
 ):
+    """
+    Create a new workflow job.
+    
+    Uses direct file source invocation - Galaxy fetches the file from S3 as part
+    of workflow execution. No pre-import/download needed.
+    """
     # Check if all required clients are available
     if not galaxy:
         raise HTTPException(status_code=503, detail="Galaxy service is unavailable. Please check /health for details.")
     if not supabase:
         raise HTTPException(status_code=503, detail="Supabase service is unavailable. Please check /health for details.")
+    # Storage client is optional - Galaxy accesses S3 directly via file sources
     if not storage:
-        raise HTTPException(status_code=503, detail="Storage service is unavailable. Please check /health for details.")
-    # Don't capitalize - workflow names must match exactly (e.g., "Py3DTiles" not "Py3dtiles")
-    history_name = f"{workflow_name} - {dataset_id}" + (f" (item {dataset_item_id})" if dataset_item_id else "")
-    # make sure the requested workflow exists in galaxy
+        logger.warning("Storage service is unavailable - this is OK since Galaxy accesses S3 directly via file sources")
+    
+    # Get bucket path and item_id from Supabase
     try:
-        workflow = galaxy.ensure_workflow_available(workflow_name)
-        history = galaxy.create_history(history_name)
+        if dataset_item_id:
+            dataset_item = supabase.get_dataset_item(dataset_item_id)
+            if not dataset_item:
+                raise HTTPException(status_code=404, detail=f"Dataset item {dataset_item_id} not found")
+            bucket_path = dataset_item.get('bucket_path') if isinstance(dataset_item, dict) else dataset_item.bucket_path
+            actual_item_id = dataset_item_id
+        else:
+            # Fall back to first item in dataset (legacy behavior)
+            database_dataset = supabase.get_dataset(dataset_id)
+            bucket_path = database_dataset.bucket_path
+            response = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).limit(1).execute()
+            actual_item_id = response.data[0]["id"] if response.data else None
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Loading Workflow {workflow_name} and history failed: {e} ")
+        raise HTTPException(status_code=400, detail=f"Failed to get dataset info: {e}") from e
     
-    # Import dataset from S3/MinIO using Galaxy file sources
-    # Returns tuple of (dataset, actual_item_id)
-    dataset, actual_item_id = _import_dataset_from_storage(galaxy, supabase, dataset_id, history, dataset_item_id)
+    # Build file source URI for Galaxy to fetch directly
+    file_source_uri = galaxy.get_raw_file_source_uri(bucket_path)
+    logger.info(f"Using direct file source: {file_source_uri} (dataset_id={dataset_id}, item_id={actual_item_id})")
     
-    # Prepare workflow parameters using dynamic step resolution
-    # This replaces the old 176-line if-elif block with a single function call!
-    # Note: build_workflow_parameters still uses dataset_id to find metadata, 
-    # but actual_item_id ensures the invocation is recorded for the correct item
+    # Ensure workflow exists and create history
+    history_name = f"{workflow_name} - {dataset_id}" + (f" (item {dataset_item_id})" if dataset_item_id else "")
+    try:
+        galaxy.ensure_workflow_available(workflow_name)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Loading Workflow {workflow_name} failed: {e}")
+    
+    # Prepare workflow parameters (export paths, etc.)
     workflow_parameters = build_workflow_parameters(
         galaxy_client=galaxy,
         supabase_client=supabase,
@@ -309,13 +273,13 @@ def create_job(
         dataset_item_id=actual_item_id
     )
     
-    # Invoke workflow and record in Supabase
-    return _invoke_and_record_workflow(
+    # Invoke workflow with file source URI directly - Galaxy fetches during execution
+    return _invoke_workflow_with_file_source(
         galaxy=galaxy,
         supabase=supabase,
         workflow_name=workflow_name,
         dataset_id=dataset_id,
-        dataset=dataset,
+        file_source_uri=file_source_uri,
         history_name=history_name,
         workflow_parameters=workflow_parameters,
         user_parameters=parameters,

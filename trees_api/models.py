@@ -19,11 +19,11 @@ class Dataset(BaseModel):
 
 class WorkflowName(StrEnum):
     STANDARD = "Standard"
-    PDAL_METADATA = "PdalMetadata"
     OVERVIEW = "Overviews"
     SEGMENTATION = "Segmentation"
     PY3DTILES = "Py3DTiles"
     ENDTOEND = "EndToEndPipeline"
+    ENDTOEND_GALAXY_EU = "EndToEndPipeline-GalaxyEU"
 
 # WorkflowStatus enum removed - using Galaxy states directly in database
 

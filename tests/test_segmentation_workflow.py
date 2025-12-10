@@ -1,7 +1,7 @@
 """
 Test Segmentation workflow - End-to-End Test
 
-This test verifies the segmentation workflow:
+This test verifies the segmentation workflow with the 3-step pattern:
 1. Dataset exists in S3 (raw-storage bucket) and Supabase DB
 2. Call API endpoint to start workflow
 3. Galaxy imports directly from S3 using file sources (no download/upload)
@@ -9,7 +9,13 @@ This test verifies the segmentation workflow:
 5. Verify outputs in Supabase DB
 6. Verify segmented LAZ exported to S3 products bucket
 
-Simple pipeline: Raw LAZ → Segmentation → Export
+Pipeline: Raw LAZ → Tile → SegmentAnyTree → Merge → Export
+
+Steps:
+- Tile: Subsample and tile the point cloud (CPU only)
+- SegmentAnyTree: Deep learning tree segmentation (GPU required)
+- Merge: Merge segmented tiles back to original resolution (CPU only)
+- Export: Export final LAZ to S3
 
 This test requires GPU for SegmentAnyTree step. Test will fail if GPU unavailable (production-only test).
 """
@@ -35,7 +41,7 @@ def test_segmentation_workflow(
     test_remote_file: Dataset
 ):
     """
-    End-to-End test for Segmentation workflow (simple segmentation only).
+    End-to-End test for Segmentation workflow (3-step: Tile → Segment → Merge).
     
     Production-like flow:
     1. Dataset already exists in S3 (raw-storage) and Supabase (via test_remote_file fixture)
@@ -46,11 +52,17 @@ def test_segmentation_workflow(
     6. Verify segmented LAZ exported to S3 products bucket
     
     This test simulates the actual production flow where the status.py cronjob
-    continuously syncs Galaxy status to the database (~2 minutes).
+    continuously syncs Galaxy status to the database.
+    
+    Expected workflow steps:
+    - Step 1: 3Dtrees: Tile (tile_merge tool in tile mode) - CPU only
+    - Step 2: 3Dtrees: SegmentAnyTree - GPU required
+    - Step 3: 3Dtrees: Merge (tile_merge tool in merge mode) - CPU only
+    - Step 4: Export to S3
     
     Requires GPU for SegmentAnyTree step - will fail hard if unavailable.
     """
-    logger.info("🧪 Testing Segmentation workflow (End-to-End)")
+    logger.info("🧪 Testing Segmentation workflow (3-step: Tile → Segment → Merge)")
     
     # Step 1: Verify dataset exists in S3 and DB
     logger.info(f"📦 Dataset ID: {test_remote_file.id}")
@@ -88,12 +100,17 @@ def test_segmentation_workflow(
     
     # Step 3: Monitor workflow status using status.py poller (production-like)
     logger.info("⏳ Monitoring workflow status via status.py poller...")
-    logger.info("⚠️  Segmentation workflow (1 tool + 1 export) may take 2-3 minutes")
+    logger.info("⚠️  Segmentation workflow (4 steps: Tile → Segment → Merge → Export) may take 5-10 minutes")
     
-    max_attempts = 120  # 120 × 5 seconds = ~10 minutes max (GPU jobs can be slow)
+    # Expected jobs: tile_merge (tile), segmentanytree, tile_merge (merge), export_remote
+    expected_jobs = 4
+    
+    max_attempts = 180  # 180 × 5 seconds = ~15 minutes max (GPU jobs + tiling/merging can be slow)
     workflow_finished = False
     final_status = None
     supabase_inv = None
+    current_status = None
+    jobs = []
     
     for attempt in range(max_attempts):
         time.sleep(5)
@@ -113,7 +130,14 @@ def test_segmentation_workflow(
             current_status = supabase_inv.status
             jobs = supabase_inv.jobs or []
             
-            logger.info(f"Attempt {attempt + 1}/{max_attempts}: status={current_status}, jobs={len(jobs)}")
+            # Count job states for logging
+            job_states = {}
+            for job in jobs:
+                state = job.get('state', 'unknown')
+                job_states[state] = job_states.get(state, 0) + 1
+            
+            job_summary = ', '.join([f"{state}={count}" for state, count in job_states.items()]) if job_states else "no jobs"
+            logger.info(f"Attempt {attempt + 1}/{max_attempts}: status={current_status}, jobs={len(jobs)}/{expected_jobs} ({job_summary})")
             
             # Check if finished (using same logic as status.py)
             if current_status in ['ok', 'success', 'error', 'failed', 'cancelled']:
@@ -122,8 +146,9 @@ def test_segmentation_workflow(
                 logger.info(f"✅ Workflow reached terminal state: {final_status}")
                 break
             
-            # Check if all jobs finished (even if workflow status is 'scheduled')
-            elif jobs:
+            # Check if we have all expected jobs and they're all finished
+            # (Galaxy keeps invocation as 'scheduled' even when all jobs complete)
+            elif len(jobs) >= expected_jobs:
                 all_jobs_finished = all(
                     job.get('state') in ['ok', 'error', 'failed', 'cancelled'] 
                     for job in jobs
@@ -132,7 +157,7 @@ def test_segmentation_workflow(
                     workflow_finished = True
                     all_jobs_successful = all(job.get('state') == 'ok' for job in jobs)
                     final_status = 'ok' if all_jobs_successful else 'error'
-                    logger.info(f"✅ All jobs completed: {final_status}")
+                    logger.info(f"✅ All {len(jobs)} jobs completed: {final_status}")
                     break
                     
         except Exception as e:
@@ -143,31 +168,55 @@ def test_segmentation_workflow(
     
     # Step 4: Verify workflow completed successfully
     if not workflow_finished:
-        pytest.fail(f"Workflow did not complete within {max_attempts * 5} seconds")
+        timeout_mins = (max_attempts * 5) // 60
+        last_state = f"status={current_status}, jobs={len(jobs)}/{expected_jobs}" if supabase_inv else "no data"
+        pytest.fail(f"Workflow did not complete within {timeout_mins} minutes (last state: {last_state})")
     
     # Step 5: Check for GPU errors (fail hard - no skip for production test)
     if final_status in ['error', 'failed']:
         logger.error("❌ Workflow failed - checking for GPU errors...")
         
-        # Check jobs for GPU-related errors
+        # Check jobs for GPU-related errors or other failures
         gpu_error_found = False
+        failed_jobs = []
         for job in supabase_inv.jobs or []:
             job_state = job.get('state')
+            job_tool_id = job.get('tool_id', '')
+            
             if job_state in ['error', 'failed']:
-                # If segmentation job failed, assume GPU issue
-                job_tool_id = job.get('tool_id', '')
+                failed_jobs.append(f"{job_tool_id}:{job_state}")
+                
+                # Check if segmentation job failed (GPU issue)
                 if 'segmentanytree' in job_tool_id.lower():
                     gpu_error_found = True
                     logger.error("❌ SegmentAnyTree job failed - GPU likely unavailable")
                     logger.error("This test requires GPU support - deploy to production Galaxy with GPU")
                     pytest.fail(f"SegmentAnyTree requires GPU. Deploy to production environment with GPU support.")
+                
+                # Check for tile_merge failures
+                elif 'tile_merge' in job_tool_id.lower():
+                    logger.error(f"❌ Tile/Merge job failed: {job_tool_id}")
         
         if not gpu_error_found:
-            pytest.fail(f"Workflow failed with status: {final_status}")
+            pytest.fail(f"Workflow failed with status: {final_status}. Failed jobs: {failed_jobs}")
     
     assert final_status in ['ok', 'success'], f"Workflow failed with status: {final_status}"
     
-    # Step 6: Verify outputs exist in DB
+    # Step 6: Verify all expected jobs completed
+    jobs = supabase_inv.jobs or []
+    logger.info(f"📊 Total jobs executed: {len(jobs)}")
+    
+    # Expected tools in order: tile_merge (tile), segmentanytree, tile_merge (merge), export_remote
+    expected_tools = ['3dtrees_tile_merge', '3dtrees_segmentanytree', '3dtrees_tile_merge', 'export_remote']
+    actual_tools = [job.get('tool_id', '') for job in jobs]
+    
+    logger.info(f"📋 Expected tools: {expected_tools}")
+    logger.info(f"📋 Actual tools: {actual_tools}")
+    
+    # Verify we have the expected number of jobs (4 for 3-step + export)
+    assert len(jobs) >= 4, f"Expected at least 4 jobs (tile, segment, merge, export), got {len(jobs)}"
+    
+    # Step 7: Verify outputs exist in DB
     outputs = supabase_inv.outputs or {}
     logger.info(f"📦 Workflow produced {len(outputs)} outputs (from DB)")
     
@@ -176,12 +225,12 @@ def test_segmentation_workflow(
     else:
         logger.info(f"✅ Output keys: {list(outputs.keys())}")
     
-    # Step 7: Verify invocation details in Supabase
+    # Step 8: Verify invocation details in Supabase
     logger.info(f"📊 Supabase status: {supabase_inv.status}")
     logger.info(f"📊 Finished at: {supabase_inv.finished_at}")
     logger.info(f"📊 Jobs count: {len(supabase_inv.jobs or [])}")
     
-    # Step 8: Verify segmented LAZ exported to S3 products bucket
+    # Step 9: Verify segmented LAZ exported to S3 products bucket
     logger.info("🔍 Verifying segmented LAZ in S3 products bucket...")
     
     try:
@@ -211,6 +260,5 @@ def test_segmentation_workflow(
     except Exception as e:
         pytest.fail(f"❌ Export verification failed: {e}")
     
-    logger.info("✅ Segmentation workflow End-to-End test PASSED!")
-
+    logger.info("✅ Segmentation workflow (3-step: Tile → Segment → Merge) End-to-End test PASSED!")
 

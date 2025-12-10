@@ -52,6 +52,7 @@ class GalaxyClient:
         Args:
             config: GalaxyConfig instance with connection details
         """
+        self.config = config  # Store full config for file source access
         self.url = config.url
         self.api_key = config.api_key
         self.email = config.email
@@ -61,6 +62,41 @@ class GalaxyClient:
         
         self.workflow_registry: Dict[str, str] = {}
         self.gi: Optional[GalaxyObjectsInstance] = None
+    
+    def get_raw_file_source_uri(self, bucket_path: str) -> str:
+        """
+        Build a file source URI for the raw storage bucket using config.
+        
+        Returns a file source URI using configured scheme and file source ID.
+        Galaxy will fetch the file directly from S3 using the file source credentials.
+        
+        Args:
+            bucket_path: Path within the bucket (e.g., "RAW/167/94/raw.laz")
+            
+        Returns:
+            File source URI for Galaxy (e.g., "gxuserfiles://uuid/RAW/167/94/raw.laz")
+        """
+        return self.build_file_source_uri(
+            self.config.file_source_raw,
+            bucket_path,
+            scheme=self.config.file_source_scheme
+        )
+    
+    def get_products_file_source_uri(self, bucket_path: str) -> str:
+        """
+        Build a file source URI for the products storage bucket using config.
+        
+        Args:
+            bucket_path: Path within the bucket (e.g., "standard/123/456/")
+            
+        Returns:
+            Complete file source URI using configured scheme and file source ID
+        """
+        return self.build_file_source_uri(
+            self.config.file_source_products,
+            bucket_path,
+            scheme=self.config.file_source_scheme
+        )
     
     def setup_user_with_bootstrap(self, email: Optional[str] = None, password: Optional[str] = None) -> bool:
         """
@@ -708,6 +744,87 @@ class GalaxyClient:
         
         return inputs
     
+    def prepare_workflow_inputs_from_url(self, workflow_name: str, file_source_uri: str) -> Dict[str, Any]:
+        """
+        Prepare workflow inputs using a file source URI.
+        
+        Galaxy will fetch the file directly from the file source as part of
+        workflow execution, rather than requiring a pre-existing dataset.
+        
+        Args:
+            workflow_name: Name of the workflow
+            file_source_uri: File source URI (e.g., "gxuserfiles://uuid/path/to/file.laz")
+            
+        Returns:
+            Dictionary of workflow inputs with URL source
+            
+        Raises:
+            KeyError: If workflow name is not registered
+        """
+        # Get workflow info to understand input structure
+        workflow_info = self.get_workflow_info(workflow_name)
+        
+        # Determine file extension from URI
+        import os
+        ext = os.path.splitext(file_source_uri)[1].lstrip('.').lower()
+        if not ext:
+            ext = "auto"  # Let Galaxy auto-detect
+        
+        # Extract filename from URI for the name field
+        filename = os.path.basename(file_source_uri)
+        
+        # For LAS/LAZ workflows, typically the first input (step 0) is the file
+        # Galaxy 25.0 expects FileRequestUri format with 'class' field
+        # See: https://docs.galaxyproject.org/en/master/_modules/galaxy/schema/schema.html
+        inputs = {
+            "0": {
+                "class": "File",  # Required by Galaxy 25.0
+                "url": file_source_uri,
+                "ext": ext,
+                "name": filename
+            }
+        }
+        
+        return inputs
+    
+    def invoke_workflow_with_file_source(
+        self, 
+        workflow_name: str, 
+        file_source_uri: str, 
+        history_name: str = None, 
+        parameters: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Invoke a workflow with a file source URI (no pre-import needed).
+        
+        Galaxy will fetch the file directly from the file source as part of
+        workflow execution. This is more efficient than pre-importing the file.
+        
+        Args:
+            workflow_name: Name of the workflow to invoke
+            file_source_uri: File source URI (e.g., "gxuserfiles://uuid/path/to/file.laz")
+            history_name: Optional name for the history
+            parameters: Optional workflow step parameters (e.g., export path)
+            
+        Returns:
+            Invocation data if successful
+            
+        Raises:
+            KeyError: If workflow name is not registered
+            RuntimeError: If workflow cannot be imported or invoked
+        """
+        logger.info(f"🚀 invoke_workflow_with_file_source called: workflow={workflow_name}, uri={file_source_uri}, params={parameters}")
+        
+        # Prepare inputs with file source URL
+        inputs = self.prepare_workflow_inputs_from_url(workflow_name, file_source_uri)
+        
+        # Add parameters if provided (for setting step-specific values like export path)
+        if parameters:
+            inputs["parameters"] = parameters
+        
+        # Invoke workflow
+        return self.invoke_workflow(workflow_name, inputs, history_name)
+    
     def invoke_workflow_with_dataset(self, workflow_name: str, dataset_id: str, history_name: str = None, parameters: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Invoke a workflow with an existing dataset in Galaxy.
@@ -793,13 +910,14 @@ class GalaxyClient:
             raise RuntimeError(f"Failed to upload file '{file_path}': {e}") from e
     
     @staticmethod
-    def build_file_source_uri(file_source_id: str, bucket_path: str) -> str:
+    def build_file_source_uri(file_source_id: str, bucket_path: str, scheme: str = "gxfiles") -> str:
         """
         Build a Galaxy file source URI.
         
         Args:
-            file_source_id: ID of the file source (e.g., "raw-storage", "products-storage")
+            file_source_id: ID of the file source (e.g., "raw-storage", "products-storage", or UUID for Galaxy EU)
             bucket_path: Path within the bucket (e.g., "LAS/Example_Platane.laz")
+            scheme: URI scheme - "gxfiles" for local Galaxy, "gxuserfiles" for Galaxy EU
             
         Returns:
             Complete file source URI (e.g., "gxfiles://raw-storage/LAS/Example_Platane.laz")
@@ -808,10 +926,19 @@ class GalaxyClient:
             >>> uri = GalaxyClient.build_file_source_uri("raw-storage", "LAS/Example_Platane.laz")
             >>> print(uri)
             gxfiles://raw-storage/LAS/Example_Platane.laz
+            
+            # For Galaxy EU:
+            >>> uri = GalaxyClient.build_file_source_uri(
+            ...     "be5b90f9-ffab-44a2-a1f3-58ba87f04220",
+            ...     "LAS/Example_Platane.laz",
+            ...     scheme="gxuserfiles"
+            ... )
+            >>> print(uri)
+            gxuserfiles://be5b90f9-ffab-44a2-a1f3-58ba87f04220/LAS/Example_Platane.laz
         """
         # Remove leading slash from bucket_path if present
         bucket_path = bucket_path.lstrip('/')
-        return f"gxfiles://{file_source_id}/{bucket_path}"
+        return f"{scheme}://{file_source_id}/{bucket_path}"
     
     def import_from_file_source(self, history, file_source_uri: str, file_type: str = "auto"):
         """
@@ -844,10 +971,12 @@ class GalaxyClient:
         if not self.gi:
             raise RuntimeError("Not connected to Galaxy. Call connect() first.")
         
-        if not file_source_uri.startswith("gxfiles://"):
+        # Accept gxfiles:// (local Galaxy), gxuserfiles:// (Galaxy EU), or direct HTTPS URLs
+        valid_schemes = ("gxfiles://", "gxuserfiles://", "https://", "http://")
+        if not any(file_source_uri.startswith(scheme) for scheme in valid_schemes):
             raise ValueError(
                 f"Invalid file source URI: {file_source_uri}. "
-                "Must start with 'gxfiles://' followed by file-source-id/path"
+                "Must start with 'gxfiles://', 'gxuserfiles://', or 'https://'"
             )
         
         try:

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from botocore.exceptions import ClientError
 
-from trees_api.storage_client import StorageClient
+from trees_api.storage_client import UploaderStorageClient
 
 logger = logging.getLogger("trees_api.upload_router")
 
@@ -65,10 +65,13 @@ class ListPartsResponse(BaseModel):
 
 
 # Dependency injection
-def get_storage_client() -> Optional[StorageClient]:
-    """Get Storage client instance from connection manager."""
+def get_uploader_storage() -> Optional[UploaderStorageClient]:
+    """Get Uploader Storage client instance from connection manager.
+    
+    Uses uploader credentials (write access to raw bucket) for presigned URL generation.
+    """
     from trees_api.connection_manager import connection_manager
-    return connection_manager.get_storage_client()
+    return connection_manager.get_uploader_storage_client()
 
 
 # Endpoints
@@ -85,7 +88,7 @@ async def handle_options(response: Response):
 @router.post("/create", response_model=CreateMultipartResponse)
 async def create_multipart_upload(
     request: CreateMultipartRequest,
-    storage: Optional[StorageClient] = Depends(get_storage_client)
+    storage: Optional[UploaderStorageClient] = Depends(get_uploader_storage)
 ):
     """
     Initialize S3 multipart upload.
@@ -155,7 +158,7 @@ async def create_multipart_upload(
 @router.post("/presign", response_model=PresignPartsResponse)
 async def presign_parts(
     request: PresignPartsRequest,
-    storage: Optional[StorageClient] = Depends(get_storage_client)
+    storage: Optional[UploaderStorageClient] = Depends(get_uploader_storage)
 ):
     """
     Generate presigned URLs for uploading parts.
@@ -213,7 +216,7 @@ async def presign_parts(
 @router.post("/complete", response_model=CompleteMultipartResponse)
 async def complete_multipart_upload(
     request: CompleteMultipartRequest,
-    storage: Optional[StorageClient] = Depends(get_storage_client)
+    storage: Optional[UploaderStorageClient] = Depends(get_uploader_storage)
 ):
     """
     Complete S3 multipart upload.
@@ -290,7 +293,7 @@ async def complete_multipart_upload(
 @router.post("/abort", response_model=AbortMultipartResponse)
 async def abort_multipart_upload(
     request: AbortMultipartRequest,
-    storage: Optional[StorageClient] = Depends(get_storage_client)
+    storage: Optional[UploaderStorageClient] = Depends(get_uploader_storage)
 ):
     """
     Abort S3 multipart upload.
@@ -334,7 +337,7 @@ async def abort_multipart_upload(
 async def list_parts(
     key: str,
     uploadId: str,
-    storage: Optional[StorageClient] = Depends(get_storage_client)
+    storage: Optional[UploaderStorageClient] = Depends(get_uploader_storage)
 ):
     """
     List uploaded parts for a multipart upload.

@@ -95,8 +95,8 @@ def supabase_client() -> SupabaseClient:
 
 @pytest.fixture(scope="session")
 def test_remote_file(storage_client: StorageClient, supabase_client: SupabaseClient) -> Dataset:
-    key = "LAS/Example_Platane.laz"
-    file_path = Path(__file__).parent / "Example_Platane.laz"
+    key = "LAS/mikro.laz"
+    file_path = Path(__file__).parent / "test_data" / "mikro.laz"
     
     if not file_path.exists():
         raise FileNotFoundError(f"Test file not found: {file_path}")
@@ -129,7 +129,7 @@ def test_remote_file(storage_client: StorageClient, supabase_client: SupabaseCli
     dataset = supabase_client.create_dataset(
         bucket_path=key,
         acquisition_date=datetime.now(),
-        title="Test Platane",
+        title="Test Mikro",
         file_name=file_path.name,
         visibility="public"
     )

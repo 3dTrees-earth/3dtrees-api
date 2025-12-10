@@ -389,14 +389,14 @@ def test_product_metadata_ingestion(supabase_client):
     assert standard_resp.data, "No standard record found"
     standard_record = standard_resp.data[0]
     
-    # Check metadata fields
-    assert standard_record.get("pdal_info_raw"), "pdal_info_raw should be populated"
-    assert isinstance(standard_record["pdal_info_raw"], dict), "pdal_info_raw should be a dict"
-    logger.info("    ✅ pdal_info_raw: Present")
+    # Check metadata fields (from tool_standard JSON log)
+    assert standard_record.get("las_info_raw"), "las_info_raw should be populated"
+    assert isinstance(standard_record["las_info_raw"], dict), "las_info_raw should be a dict"
+    logger.info("    ✅ las_info_raw: Present")
     
-    assert standard_record.get("pdal_info_standard"), "pdal_info_standard should be populated"
-    assert isinstance(standard_record["pdal_info_standard"], dict), "pdal_info_standard should be a dict"
-    logger.info("    ✅ pdal_info_standard: Present")
+    assert standard_record.get("las_info_standardized"), "las_info_standardized should be populated"
+    assert isinstance(standard_record["las_info_standardized"], dict), "las_info_standardized should be a dict"
+    logger.info("    ✅ las_info_standardized: Present")
     
     if standard_record.get("convex_hull"):
         logger.info("    ✅ convex_hull: Present")

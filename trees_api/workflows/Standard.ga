@@ -61,6 +61,14 @@
                 {
                     "name": "pc_standardized",
                     "type": "laz"
+                },
+                {
+                    "name": "metadata_json",
+                    "type": "json"
+                },
+                {
+                    "name": "convex_hull",
+                    "type": "geojson"
                 }
             ],
             "position": {
@@ -77,7 +85,7 @@
             "workflow_outputs": []
         },
         "2": {
-            "annotation": "Export standardized file to S3 products bucket",
+            "annotation": "Export standardized LAZ to S3 products bucket",
             "content_id": "export_remote",
             "errors": null,
             "id": 2,
@@ -105,12 +113,78 @@
             "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
-            "uuid": "a1b2c3d4-e5f6-4789-a012-3456789abcde",
+            "uuid": "cba8c0f1-5250-4302-b91b-cfd12c7403f5",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "3": {
+            "annotation": "Export metadata JSON to S3 products bucket",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 3,
+            "input_connections": {
+                "export_type|infiles": {
+                    "id": 1,
+                    "output_name": "metadata_json"
+                }
+            },
+            "inputs": [],
+            "label": "Export Metadata JSON",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 560,
+                "top": 120
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "a3440d71-d5b0-41fe-b1b8-b696a6f570ea",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "4": {
+            "annotation": "Export convex hull GeoJSON to S3 products bucket",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 4,
+            "input_connections": {
+                "export_type|infiles": {
+                    "id": 1,
+                    "output_name": "convex_hull"
+                }
+            },
+            "inputs": [],
+            "label": "Export Convex Hull GeoJSON",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 560,
+                "top": 220
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "62345f69-9676-4eea-b468-44d004e3a5a9",
             "when": null,
             "workflow_outputs": []
         }
     },
     "tags": [],
     "uuid": "f7b05dcf-25d7-4546-bcf5-1f29cdb4c180",
-    "version": 4
+    "version": 5
 }

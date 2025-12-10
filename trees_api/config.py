@@ -12,7 +12,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class GalaxyConfig(BaseSettings):
-    """Galaxy server configuration."""
+    """Galaxy server configuration.
+    
+    File Source Configuration:
+        Local Galaxy uses simple IDs: raw-storage, products-storage
+        Galaxy EU uses UUIDs: gxuserfiles://be5b90f9-ffab-44a2-a1f3-58ba87f04220/
+        
+        Set these environment variables for Galaxy EU:
+            GALAXY_FILE_SOURCE_RAW=be5b90f9-ffab-44a2-a1f3-58ba87f04220
+            GALAXY_FILE_SOURCE_PRODUCTS=e1d3f62b-2abb-4f1f-a888-e69f676980cb
+            GALAXY_FILE_SOURCE_SCHEME=gxuserfiles
+    """
     
     url: str = Field(default='http://127.0.0.1:9090', description="Galaxy server URL")
     api_key: Optional[str] = Field(default=None, description="Galaxy API key (if already available)")
@@ -24,6 +34,21 @@ class GalaxyConfig(BaseSettings):
         description="Path to workflow files"
     )
     
+    # File source configuration for S3 bucket access
+    # Local: raw-storage, products-storage with gxfiles:// scheme
+    # Galaxy EU: UUID-based IDs with gxuserfiles:// scheme
+    file_source_raw: str = Field(
+        default="raw-storage",
+        description="Galaxy file source ID for raw data bucket"
+    )
+    file_source_products: str = Field(
+        default="products-storage",
+        description="Galaxy file source ID for products bucket"
+    )
+    file_source_scheme: str = Field(
+        default="gxfiles",
+        description="URI scheme for file sources (gxfiles for local, gxuserfiles for Galaxy EU)"
+    )
     model_config = SettingsConfigDict(
         case_sensitive=False,
         cli_parse_args=True,
@@ -31,6 +56,26 @@ class GalaxyConfig(BaseSettings):
         env_prefix="GALAXY_",
         extra="ignore",
     )
+    
+    def build_file_source_uri(self, file_source_id: str, path: str) -> str:
+        """
+        Build a complete file source URI with the configured scheme.
+        
+        Args:
+            file_source_id: File source ID (e.g., "raw-storage" or UUID)
+            path: Path within the bucket
+            
+        Returns:
+            Complete URI like "gxfiles://raw-storage/path" or "gxuserfiles://uuid/path"
+        """
+        # Remove leading slash from path if present
+        path = path.lstrip('/')
+        return f"{self.file_source_scheme}://{file_source_id}/{path}"
+    
+    @property
+    def is_galaxy_eu(self) -> bool:
+        """Check if configured for Galaxy EU (vs local Galaxy)."""
+        return "usegalaxy.eu" in self.url or self.file_source_scheme == "gxuserfiles"
 
 
 class SupabaseConfig(BaseSettings):
@@ -39,7 +84,7 @@ class SupabaseConfig(BaseSettings):
     url: str = Field(default="", description="Supabase project URL")
     key: str = Field(default="", description="Supabase anon/public key")
     service_key: Optional[str] = Field(default=None, description="Supabase service role key (for admin operations)")
-    email: Optional[str] = Field(default="processor@3dtrees.earth", description="Supabase user email")
+    email: Optional[str] = Field(default=None, description="Supabase user email (optional with service_role key)")
     password: Optional[str] = Field(default=None, description="Supabase user password")
     datasets_table: str = Field(default="datasets", description="Supabase datasets table name")
     invocations_table: str = Field(default="galaxy_workflow_invocations", description="Supabase workflow invocations table name")
@@ -56,16 +101,37 @@ class SupabaseConfig(BaseSettings):
 class StorageConfig(BaseSettings):
     """S3/MinIO storage configuration.
     
-    Local development defaults to MinIO at localhost:9500.
+    Supports separate credentials for processor (read raw, write products) 
+    and uploader (write raw for frontend uploads).
+    
     For production, set environment variables:
         STORAGE_URL=https://s3.bwsfs.uni-freiburg.de
-        STORAGE_BUCKET_NAME_RAW=frct-3dtrees-raw-prod
-        STORAGE_BUCKET_NAME_PRODUCTS=frct-3dtrees-products-prod
-        STORAGE_REGION=fr-repl
+        STORAGE_BUCKET_NAME_RAW=frct-3dtrees-raw-dev
+        STORAGE_BUCKET_NAME_PRODUCTS=frct-3dtrees-products-dev
+        STORAGE_REGION=fr1-ec82
+        
+        # Processor credentials (read raw, write products)
+        STORAGE_ACCESS_KEY_PROCESSOR=...
+        STORAGE_SECRET_KEY_PROCESSOR=...
+        
+        # Uploader credentials (write raw for frontend uploads)
+        STORAGE_ACCESS_KEY_UPLOADER=...
+        STORAGE_SECRET_KEY_UPLOADER=...
     """
     
-    access_key: str = Field(default="minioadmin", description="Storage access key")
-    secret_key: str = Field(default="minioadmin", description="Storage secret key")
+    # Legacy single credentials (for backward compatibility with local dev)
+    access_key: Optional[str] = Field(default=None, description="Legacy storage access key (use _PROCESSOR/_UPLOADER instead)")
+    secret_key: Optional[str] = Field(default=None, description="Legacy storage secret key (use _PROCESSOR/_UPLOADER instead)")
+    
+    # Processor credentials: read from raw bucket, write to products bucket
+    access_key_processor: Optional[str] = Field(default=None, description="Processor access key (read raw, write products)")
+    secret_key_processor: Optional[str] = Field(default=None, description="Processor secret key (read raw, write products)")
+    
+    # Uploader credentials: write to raw bucket (for frontend uploads via presigned URLs)
+    access_key_uploader: Optional[str] = Field(default=None, description="Uploader access key (write raw)")
+    secret_key_uploader: Optional[str] = Field(default=None, description="Uploader secret key (write raw)")
+    
+    # Bucket configuration
     bucket_name: str = Field(default="3dtrees-dev", description="Legacy single bucket name")
     bucket_name_products: str = Field(default="3dtrees-products", description="Products bucket name")
     bucket_name_raw: str = Field(default="3dtrees-raw", description="Raw data bucket name")
@@ -79,6 +145,26 @@ class StorageConfig(BaseSettings):
         env_prefix="STORAGE_",
         extra="ignore",
     )
+    
+    @property
+    def processor_access_key(self) -> str:
+        """Get processor access key (falls back to legacy access_key)."""
+        return self.access_key_processor or self.access_key or ""
+    
+    @property
+    def processor_secret_key(self) -> str:
+        """Get processor secret key (falls back to legacy secret_key)."""
+        return self.secret_key_processor or self.secret_key or ""
+    
+    @property
+    def uploader_access_key(self) -> str:
+        """Get uploader access key (falls back to legacy access_key)."""
+        return self.access_key_uploader or self.access_key or ""
+    
+    @property
+    def uploader_secret_key(self) -> str:
+        """Get uploader secret key (falls back to legacy secret_key)."""
+        return self.secret_key_uploader or self.secret_key or ""
     
     @property
     def public_endpoint(self) -> str:
@@ -147,11 +233,17 @@ class AppConfig:
         if not self.supabase.key:
             errors.append("SUPABASE_KEY is required")
         
-        # Validate Storage
-        if not self.storage.access_key:
-            errors.append("STORAGE_ACCESS_KEY is required")
-        if not self.storage.secret_key:
-            errors.append("STORAGE_SECRET_KEY is required")
+        # Validate Storage - need either legacy keys OR both processor and uploader keys
+        has_legacy = self.storage.access_key and self.storage.secret_key
+        has_processor = self.storage.access_key_processor and self.storage.secret_key_processor
+        has_uploader = self.storage.access_key_uploader and self.storage.secret_key_uploader
+        
+        if not has_legacy and not (has_processor and has_uploader):
+            errors.append(
+                "Storage credentials required: either STORAGE_ACCESS_KEY/STORAGE_SECRET_KEY, "
+                "or both STORAGE_ACCESS_KEY_PROCESSOR/STORAGE_SECRET_KEY_PROCESSOR and "
+                "STORAGE_ACCESS_KEY_UPLOADER/STORAGE_SECRET_KEY_UPLOADER"
+            )
         
         # Validate Galaxy (email+password OR api_key required for auth)
         if not self.galaxy.api_key:

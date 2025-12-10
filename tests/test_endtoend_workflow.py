@@ -8,14 +8,19 @@ This test verifies the complete production pipeline:
 4. Monitor workflow status via status.py poller (database-driven)
 5. Verify outputs in Supabase DB
 6. Verify ALL exported outputs in S3 products bucket across all stages:
-   - Raw metadata (metadata.json from raw input)
    - Standardized LAZ
-   - Standardized metadata (metadata.json from standardized LAZ)
+   - Standardization metadata (metadata.json with pre/post info)
+   - Convex hull GeoJSON (convex_hull_wgs84.GeoJSON)
    - Overview images (5 files)
    - Segmented LAZ
    - 3D Tiles (tileset.json, preview.pnts, points/*.pnts)
 
-Pipeline: Raw Metadata → Standardization → Standardized Metadata + Overviews + Segmentation (parallel) → Exports → 3DTiles → Exports
+Pipeline: Standardization → Exports → Overviews → Exports → Tile → SegmentAnyTree → Merge → Export → 3DTiles → Exports
+
+Segmentation is now a 3-step process:
+1. Tile (tile_merge in tile mode) - Subsamples and tiles the point cloud
+2. SegmentAnyTree - Deep learning tree segmentation on tiles
+3. Merge (tile_merge in merge mode) - Merges tiles back to original resolution
 
 This is a comprehensive test (~10-15 minutes) that validates the entire 3DTrees processing pipeline.
 Requires GPU for SegmentAnyTree step - will fail if GPU unavailable.
@@ -52,6 +57,12 @@ def test_endtoend_workflow(
     4. Monitor workflow status via status.py poller → updates Supabase DB
     5. Check workflow completion via database (not Galaxy directly)
     6. Verify ALL outputs exported to S3 products bucket across all stages
+    
+    Pipeline structure (16 jobs total):
+    - Standard (1 tool) → 3 exports (LAZ, metadata, convex hull)
+    - Overviews (1 tool) → 3 exports (top views, section views, GIF)
+    - Tile → SegmentAnyTree → Merge (3 tools) → 1 export (segmented LAZ)
+    - Py3DTiles (1 tool) → 3 exports (tileset.json, preview.pnts, points tiles)
     
     This test simulates the actual production flow where the status.py cronjob
     continuously syncs Galaxy status to the database (~10-15 minutes for full pipeline).
@@ -98,14 +109,15 @@ def test_endtoend_workflow(
     
     # Step 3: Monitor workflow status using status.py poller (production-like)
     logger.info("⏳ Monitoring workflow status via status.py poller...")
-    logger.info("⚠️  EndToEndPipeline is comprehensive: 4 tools + 8 exports = 12 jobs total")
+    logger.info("⚠️  EndToEndPipeline is comprehensive: 6 tools + 10 exports = 16 jobs total")
+    logger.info("⚠️  Tools: Standard, Overviews, Tile, SegmentAnyTree, Merge, Py3DTiles")
     logger.info("⚠️  Expected duration: ~10-15 minutes (includes GPU segmentation + 3DTiles conversion)")
     
     max_attempts = 120  # 120 × 5 seconds = 10 minutes max
     workflow_finished = False
     final_status = None
     supabase_inv = None
-    expected_jobs = 12  # 4 main tools + 8 export steps
+    expected_jobs = 16  # 6 main tools + 10 export steps
     
     for attempt in range(max_attempts):
         time.sleep(5)
@@ -139,6 +151,17 @@ def test_endtoend_workflow(
                 workflow_finished = True
                 final_status = current_status
                 logger.info(f"✅ Workflow reached terminal state: {final_status}")
+                break
+            
+            # Check if any job has errored and no jobs are still running
+            # This means the workflow has failed and won't complete
+            has_error = job_states.get('error', 0) > 0 or job_states.get('failed', 0) > 0
+            has_running = job_states.get('running', 0) > 0 or job_states.get('new', 0) > 0 or job_states.get('queued', 0) > 0
+            
+            if has_error and not has_running:
+                workflow_finished = True
+                final_status = 'error'
+                logger.info(f"❌ Workflow failed: {job_states.get('error', 0)} error job(s), {job_states.get('paused', 0)} paused")
                 break
             
             # Check if we have all expected jobs and they're all finished
@@ -219,58 +242,6 @@ def test_endtoend_workflow(
     missing_outputs = []
     found_outputs = []
     
-    # 9.0: Verify Raw Metadata JSON
-    logger.info("\n  📁 Stage 0: Raw Metadata")
-    raw_metadata_key = f"metadata/{dataset_id}/{dataset_item_id}/raw_metadata.json"
-    try:
-        response = storage_client.client.head_object(
-            Bucket="3dtrees-products",
-            Key=raw_metadata_key
-        )
-        file_size = response.get('ContentLength', 0)
-        assert file_size > 0, f"Raw metadata file is empty: {raw_metadata_key}"
-        
-        # Download and validate JSON content
-        obj = storage_client.client.get_object(
-            Bucket="3dtrees-products",
-            Key=raw_metadata_key
-        )
-        metadata_content = obj['Body'].read().decode('utf-8')
-        metadata = json.loads(metadata_content)
-        
-        # Validate metadata structure
-        assert "tool" in metadata, "Missing 'tool' section in raw metadata"
-        assert "input_file" in metadata, "Missing 'input_file' section in raw metadata"
-        assert "summary" in metadata, "Missing 'summary' section in raw metadata"
-        assert "raw_metadata" in metadata, "Missing 'raw_metadata' section in raw metadata"
-        
-        logger.info(f"    ✅ raw_metadata.json: {file_size:,} bytes")
-        logger.info(f"       Tool: {metadata['tool']['name']} v{metadata['tool']['version']}")
-        logger.info(f"       Point count: {metadata['summary'].get('point_count', 'N/A'):,}")
-        
-        if "boundary" in metadata["summary"]:
-            boundary = metadata["summary"]["boundary"]
-            area = boundary.get('area_m2', 'N/A')
-            density = boundary.get('density_pts_per_m2', 'N/A')
-            if area != 'N/A':
-                logger.info(f"       Area: {area:.2f} m²")
-            if density != 'N/A':
-                logger.info(f"       Density: {density:.2f} pts/m²")
-        
-        found_outputs.append('raw_metadata.json')
-    except storage_client.client.exceptions.NoSuchKey:
-        missing_outputs.append('raw_metadata.json')
-        logger.error(f"    ❌ raw_metadata.json: NOT FOUND at {raw_metadata_key}")
-    except json.JSONDecodeError as e:
-        missing_outputs.append('raw_metadata.json')
-        logger.error(f"    ❌ raw_metadata.json: INVALID JSON - {e}")
-    except AssertionError as e:
-        missing_outputs.append('raw_metadata.json')
-        logger.error(f"    ❌ raw_metadata.json: VALIDATION FAILED - {e}")
-    except Exception as e:
-        missing_outputs.append('raw_metadata.json')
-        logger.error(f"    ❌ raw_metadata.json: ERROR - {e}")
-    
     # 9.1: Verify Standardized LAZ
     logger.info("\n  📁 Stage 1: Standardization")
     standard_key = f"standard/{dataset_id}/{dataset_item_id}/standardized.laz"
@@ -290,56 +261,41 @@ def test_endtoend_workflow(
         missing_outputs.append('standardized.laz')
         logger.error(f"    ❌ standardized.laz: ERROR - {e}")
     
-    # 9.1a: Verify Standardized Metadata JSON
-    standardized_metadata_key = f"metadata/{dataset_id}/{dataset_item_id}/standardized_metadata.json"
+    # 9.1a: Verify Standardization Metadata JSON (from tool_standard)
+    metadata_key = f"standard/{dataset_id}/{dataset_item_id}/metadata.json"
     try:
         response = storage_client.client.head_object(
             Bucket="3dtrees-products",
-            Key=standardized_metadata_key
+            Key=metadata_key
         )
         file_size = response.get('ContentLength', 0)
-        assert file_size > 0, f"Standardized metadata file is empty: {standardized_metadata_key}"
-        
-        # Download and validate JSON content
-        obj = storage_client.client.get_object(
-            Bucket="3dtrees-products",
-            Key=standardized_metadata_key
-        )
-        metadata_content = obj['Body'].read().decode('utf-8')
-        metadata = json.loads(metadata_content)
-        
-        # Validate metadata structure
-        assert "tool" in metadata, "Missing 'tool' section in standardized metadata"
-        assert "input_file" in metadata, "Missing 'input_file' section in standardized metadata"
-        assert "summary" in metadata, "Missing 'summary' section in standardized metadata"
-        assert "raw_metadata" in metadata, "Missing 'raw_metadata' section in standardized metadata"
-        
-        logger.info(f"    ✅ standardized_metadata.json: {file_size:,} bytes")
-        logger.info(f"       Tool: {metadata['tool']['name']} v{metadata['tool']['version']}")
-        logger.info(f"       Point count: {metadata['summary'].get('point_count', 'N/A'):,}")
-        
-        if "boundary" in metadata["summary"]:
-            boundary = metadata["summary"]["boundary"]
-            area = boundary.get('area_m2', 'N/A')
-            density = boundary.get('density_pts_per_m2', 'N/A')
-            if area != 'N/A':
-                logger.info(f"       Area: {area:.2f} m²")
-            if density != 'N/A':
-                logger.info(f"       Density: {density:.2f} pts/m²")
-        
-        found_outputs.append('standardized_metadata.json')
+        assert file_size > 0, f"Metadata file is empty: {metadata_key}"
+        logger.info(f"    ✅ metadata.json: {file_size:,} bytes")
+        found_outputs.append('metadata.json')
     except storage_client.client.exceptions.NoSuchKey:
-        missing_outputs.append('standardized_metadata.json')
-        logger.error(f"    ❌ standardized_metadata.json: NOT FOUND at {standardized_metadata_key}")
-    except json.JSONDecodeError as e:
-        missing_outputs.append('standardized_metadata.json')
-        logger.error(f"    ❌ standardized_metadata.json: INVALID JSON - {e}")
-    except AssertionError as e:
-        missing_outputs.append('standardized_metadata.json')
-        logger.error(f"    ❌ standardized_metadata.json: VALIDATION FAILED - {e}")
+        missing_outputs.append('metadata.json')
+        logger.error(f"    ❌ metadata.json: NOT FOUND at {metadata_key}")
     except Exception as e:
-        missing_outputs.append('standardized_metadata.json')
-        logger.error(f"    ❌ standardized_metadata.json: ERROR - {e}")
+        missing_outputs.append('metadata.json')
+        logger.error(f"    ❌ metadata.json: ERROR - {e}")
+    
+    # 9.1b: Verify Convex Hull GeoJSON (from tool_standard)
+    convex_hull_key = f"standard/{dataset_id}/{dataset_item_id}/convex_hull.geojson"
+    try:
+        response = storage_client.client.head_object(
+            Bucket="3dtrees-products",
+            Key=convex_hull_key
+        )
+        file_size = response.get('ContentLength', 0)
+        assert file_size > 0, f"Convex hull file is empty: {convex_hull_key}"
+        logger.info(f"    ✅ convex_hull_wgs84.GeoJSON: {file_size:,} bytes")
+        found_outputs.append('convex_hull_wgs84.GeoJSON')
+    except storage_client.client.exceptions.NoSuchKey:
+        missing_outputs.append('convex_hull_wgs84.GeoJSON')
+        logger.error(f"    ❌ convex_hull_wgs84.GeoJSON: NOT FOUND at {convex_hull_key}")
+    except Exception as e:
+        missing_outputs.append('convex_hull_wgs84.GeoJSON')
+        logger.error(f"    ❌ convex_hull_wgs84.GeoJSON: ERROR - {e}")
     
     # 9.2: Verify Overview Images (5 files)
     logger.info("\n  📁 Stage 2: Overviews")
@@ -486,24 +442,22 @@ def test_endtoend_workflow(
             standard_record = standard_resp.data[0]
             logger.info("  📋 Standard table metadata:")
             
-            # Check for pdal_info_raw
-            if standard_record.get("pdal_info_raw"):
-                logger.info("    ✅ pdal_info_raw: Present")
+            # Check for las_info_raw (metadata from tool_standard)
+            if standard_record.get("las_info_raw"):
+                logger.info("    ✅ las_info_raw: Present")
                 # Verify it's valid JSON with expected structure
-                pdal_raw = standard_record["pdal_info_raw"]
-                assert isinstance(pdal_raw, dict), "pdal_info_raw should be a dict"
-                assert "tool" in pdal_raw or "metadata" in pdal_raw, "pdal_info_raw missing expected keys"
+                las_raw = standard_record["las_info_raw"]
+                assert isinstance(las_raw, (dict, list)), "las_info_raw should be a dict or list"
             else:
-                logger.warning("    ⚠️  pdal_info_raw: Not yet populated")
+                logger.warning("    ⚠️  las_info_raw: Not yet populated")
             
-            # Check for pdal_info_standard
-            if standard_record.get("pdal_info_standard"):
-                logger.info("    ✅ pdal_info_standard: Present")
-                pdal_std = standard_record["pdal_info_standard"]
-                assert isinstance(pdal_std, dict), "pdal_info_standard should be a dict"
-                assert "tool" in pdal_std or "metadata" in pdal_std, "pdal_info_standard missing expected keys"
+            # Check for las_info_standardized
+            if standard_record.get("las_info_standardized"):
+                logger.info("    ✅ las_info_standardized: Present")
+                las_std = standard_record["las_info_standardized"]
+                assert isinstance(las_std, (dict, list)), "las_info_standardized should be a dict or list"
             else:
-                logger.warning("    ⚠️  pdal_info_standard: Not yet populated")
+                logger.warning("    ⚠️  las_info_standardized: Not yet populated")
             
             # Check for convex_hull
             if standard_record.get("convex_hull"):

@@ -166,27 +166,39 @@ def test_standard_workflow(
             # Expected path matches runner structure: standard/{dataset_id}/{dataset_item_id}/
             base_path = f"standard/{test_remote_file.id}/{dataset_item_id}"
             
-            # Only expect standardized.laz - metadata is handled by separate PDAL tool
-            expected_key = f"{base_path}/standardized.laz"
-            logger.info(f"📂 Checking for standardized point cloud: {expected_key}")
+            # Check for all expected outputs from tool_standard
+            # Note: metadata file is named after input file (input.json since we copy to input.laz)
+            expected_files = [
+                (f"{base_path}/standardized.laz", True),   # Required
+                (f"{base_path}/metadata.json", False),      # Optional - depends on workflow export
+                (f"{base_path}/convex_hull.GeoJSON", False) # Optional - only if CRS is transformable
+            ]
             
-            try:
-                response = storage_client.client.head_object(
-                    Bucket="3dtrees-products",
-                    Key=expected_key
-                )
-                file_size = response.get('ContentLength', 0)
-                logger.info(f"✅ standardized.laz: {expected_key} ({file_size:,} bytes)")
-                
-                # Verify file size is reasonable (should be > 0)
-                assert file_size > 0, f"Exported file is empty: {expected_key}"
-                
-                logger.info(f"✅ Standard workflow output verified successfully!")
-                
-            except storage_client.client.exceptions.NoSuchKey:
-                pytest.fail(f"❌ standardized.laz not found in S3 products bucket: {expected_key}")
-            except Exception as e:
-                pytest.fail(f"❌ Could not verify standardized.laz: {e}")
+            for expected_key, required in expected_files:
+                logger.info(f"📂 Checking for: {expected_key}")
+                try:
+                    response = storage_client.client.head_object(
+                        Bucket="3dtrees-products",
+                        Key=expected_key
+                    )
+                    file_size = response.get('ContentLength', 0)
+                    logger.info(f"✅ Found: {expected_key} ({file_size:,} bytes)")
+                    
+                    if required:
+                        assert file_size > 0, f"Exported file is empty: {expected_key}"
+                        
+                except storage_client.client.exceptions.NoSuchKey:
+                    if required:
+                        pytest.fail(f"❌ Required file not found: {expected_key}")
+                    else:
+                        logger.info(f"ℹ️ Optional file not found (may be expected): {expected_key}")
+                except Exception as e:
+                    if required:
+                        pytest.fail(f"❌ Could not verify {expected_key}: {e}")
+                    else:
+                        logger.warning(f"⚠️ Could not check optional file {expected_key}: {e}")
+            
+            logger.info(f"✅ Standard workflow outputs verified successfully!")
         else:
             logger.warning(f"⚠️ Could not get dataset_item_id for verification")
     except Exception as e:

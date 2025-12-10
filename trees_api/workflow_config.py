@@ -20,15 +20,53 @@ if TYPE_CHECKING:
 logger = logging.getLogger("uvicorn")
 
 
+def _extract_las_info(data: any, standardized: bool) -> dict | None:
+    """
+    Extract las_info entry from tool_standard JSON log based on standardized flag.
+    
+    The tool_standard R script writes two JSON entries to the log file:
+    - las_info_pre with standardized=false (raw file metadata)
+    - las_info_post with standardized=true (standardized file metadata)
+    
+    Args:
+        data: Parsed JSON data (can be list of entries or single dict)
+        standardized: If True, extract post-standardization entry; if False, pre-standardization
+        
+    Returns:
+        The matching las_info entry, or None if not found
+    """
+    if data is None:
+        return None
+    
+    # Handle list of JSON entries (typical output format)
+    if isinstance(data, list):
+        for entry in data:
+            if isinstance(entry, dict) and entry.get("standardized") == standardized:
+                return entry
+        # If no match by flag, return first entry for raw or last for standardized
+        if data:
+            return data[0] if not standardized else data[-1]
+        return None
+    
+    # Handle single dict (fallback)
+    if isinstance(data, dict):
+        # If it has the standardized flag, check it matches
+        if "standardized" in data:
+            return data if data.get("standardized") == standardized else None
+        # Otherwise return as-is for raw, None for standardized
+        return data if not standardized else None
+    
+    return None
+
+
 # Annotation patterns to match export steps
 # These must match the annotations in the .ga workflow files!
 # Pattern keys are used for matching (case-insensitive, supports regex)
 WORKFLOW_EXPORT_ANNOTATIONS = {
     "Standard": {
-        "export standardized": "standard/{dataset_id}/{dataset_item_id}/"
-    },
-    "PdalMetadata": {
-        "export metadata": "metadata/{dataset_id}/{dataset_item_id}/"
+        "export standardized laz": "standard/{dataset_id}/{dataset_item_id}/",
+        "export metadata json": "standard/{dataset_id}/{dataset_item_id}/",
+        "export convex hull": "standard/{dataset_id}/{dataset_item_id}/"
     },
     "Segmentation": {
         "export segmented": "segmentation/{dataset_id}/{dataset_item_id}/"
@@ -44,12 +82,23 @@ WORKFLOW_EXPORT_ANNOTATIONS = {
         "export.*points.*tiles|points.*subdirectory": "3dtiles/{dataset_id}/{dataset_item_id}/points/"
     },
     "EndToEndPipeline": {
-        "export raw metadata.*s3": "metadata/{dataset_id}/{dataset_item_id}/",
-        "export standardized laz.*s3 products": "standard/{dataset_id}/{dataset_item_id}/",
-        "export standardized metadata.*s3": "metadata/{dataset_id}/{dataset_item_id}/",
+        "export standardized laz": "standard/{dataset_id}/{dataset_item_id}/",
+        "export metadata json": "standard/{dataset_id}/{dataset_item_id}/",
+        "export convex hull": "standard/{dataset_id}/{dataset_item_id}/",
         "export top view": "overviews/{dataset_id}/{dataset_item_id}/",
         "export section view": "overviews/{dataset_id}/{dataset_item_id}/",
-        "export overview animation": "overviews/{dataset_id}/{dataset_item_id}/",
+        "export overview.*gif|export overview animation": "overviews/{dataset_id}/{dataset_item_id}/",
+        "export segmented laz": "segmentation/{dataset_id}/{dataset_item_id}/",
+        "export tileset": "3dtiles/{dataset_id}/{dataset_item_id}/",
+        "export preview": "3dtiles/{dataset_id}/{dataset_item_id}/",
+        "export points tiles": "3dtiles/{dataset_id}/{dataset_item_id}/points/"
+    },
+    # Galaxy EU version - no metadata_json or convex_hull (not available in Galaxy EU tool version)
+    "EndToEndPipeline-GalaxyEU": {
+        "export standardized laz": "standard/{dataset_id}/{dataset_item_id}/",
+        "export top view": "overviews/{dataset_id}/{dataset_item_id}/",
+        "export section view": "overviews/{dataset_id}/{dataset_item_id}/",
+        "export overview.*gif|export overview animation": "overviews/{dataset_id}/{dataset_item_id}/",
         "export segmented laz": "segmentation/{dataset_id}/{dataset_item_id}/",
         "export tileset": "3dtiles/{dataset_id}/{dataset_item_id}/",
         "export preview": "3dtiles/{dataset_id}/{dataset_item_id}/",
@@ -63,23 +112,23 @@ WORKFLOW_EXPORT_ANNOTATIONS = {
 WORKFLOW_METADATA_INGESTION = {
     "EndToEndPipeline": {
         "standard": {
-            "metadata_files": ["raw_metadata.json", "standardized_metadata.json"],
-            "s3_path_template": "metadata/{dataset_id}/{dataset_item_id}/",
+            "metadata_files": ["metadata.json", "convex_hull_wgs84.GeoJSON"],
+            "s3_path_template": "standard/{dataset_id}/{dataset_item_id}/",
             "target_table": "standard",
             "field_mappings": {
-                "raw_metadata.json": {
-                    "pdal_info_raw": lambda data: data,  # Store entire JSON
+                "metadata.json": {
+                    # Parse JSON log and extract pre/post standardization entries
+                    "las_info_raw": lambda data: _extract_las_info(data, standardized=False),
+                    "las_info_standardized": lambda data: _extract_las_info(data, standardized=True),
                 },
-                "standardized_metadata.json": {
-                    "pdal_info_standard": lambda data: data,
-                    "convex_hull": lambda data: data.get("summary", {}).get("boundary", {}).get("boundary_wgs84_geojson")
+                "convex_hull_wgs84.GeoJSON": {
+                    "convex_hull": lambda data: data  # Store GeoJSON directly
                 }
             },
             "detection": {
                 "files": [
-                    "metadata/{dataset_id}/{dataset_item_id}/raw_metadata.json",
-                    "metadata/{dataset_id}/{dataset_item_id}/standardized_metadata.json",
-                    "standard/{dataset_id}/{dataset_item_id}/standardized.laz"
+                    "standard/{dataset_id}/{dataset_item_id}/standardized.laz",
+                    "standard/{dataset_id}/{dataset_item_id}/metadata.json"
                 ],
                 "flag": "has_standardisation"
             }
@@ -114,28 +163,65 @@ WORKFLOW_METADATA_INGESTION = {
     },
     "Standard": {
         "standard": {
+            "metadata_files": ["metadata.json", "convex_hull_wgs84.GeoJSON"],
             "s3_path_template": "standard/{dataset_id}/{dataset_item_id}/",
             "target_table": "standard",
+            "field_mappings": {
+                "metadata.json": {
+                    # Parse JSON log and extract pre/post standardization entries
+                    "las_info_raw": lambda data: _extract_las_info(data, standardized=False),
+                    "las_info_standardized": lambda data: _extract_las_info(data, standardized=True),
+                },
+                "convex_hull_wgs84.GeoJSON": {
+                    "convex_hull": lambda data: data  # Store GeoJSON directly
+                }
+            },
             "detection": {
-                "files": ["standard/{dataset_id}/{dataset_item_id}/standardized.laz"],
+                "files": [
+                    "standard/{dataset_id}/{dataset_item_id}/standardized.laz",
+                    "standard/{dataset_id}/{dataset_item_id}/metadata.json"
+                ],
                 "flag": "has_standardisation"
             }
         }
     },
-    "PdalMetadata": {
-        "metadata": {
-            "metadata_files": ["raw_metadata.json"],
-            "s3_path_template": "metadata/{dataset_id}/{dataset_item_id}/",
+    # Galaxy EU version - no metadata files from standardization (tool version lacks those outputs)
+    "EndToEndPipeline-GalaxyEU": {
+        "standard": {
+            "metadata_files": [],  # Galaxy EU tool doesn't produce metadata.json or convex_hull
+            "s3_path_template": "standard/{dataset_id}/{dataset_item_id}/",
             "target_table": "standard",
-            "field_mappings": {
-                "raw_metadata.json": {
-                    "pdal_info_raw": lambda data: data,
-                    "convex_hull": lambda data: data.get("summary", {}).get("boundary", {}).get("boundary_wgs84_geojson")
-                }
-            },
+            "field_mappings": {},
             "detection": {
-                "files": ["metadata/{dataset_id}/{dataset_item_id}/raw_metadata.json"],
+                "files": ["standard/{dataset_id}/{dataset_item_id}/standardized.laz"],
                 "flag": "has_standardisation"
+            }
+        },
+        "overviews": {
+            "s3_path_template": "overviews/{dataset_id}/{dataset_item_id}/",
+            "target_table": "overviews",
+            "url_template": "{storage_endpoint}/{bucket_name}/overviews/{dataset_id}/{dataset_item_id}/",
+            "detection": {
+                "files": ["overviews/{dataset_id}/{dataset_item_id}/top_view_00.png"],
+                "flag": "has_overviews"
+            }
+        },
+        "segmentation": {
+            "s3_path_template": "segmentation/{dataset_id}/{dataset_item_id}/",
+            "target_table": "segmentations",
+            "url_template": "{storage_endpoint}/{bucket_name}/segmentation/{dataset_id}/{dataset_item_id}/segmented.laz",
+            "detection": {
+                "files": ["segmentation/{dataset_id}/{dataset_item_id}/segmented.laz"],
+                "flag": "has_segmentation"
+            }
+        },
+        "3dtiles": {
+            "s3_path_template": "3dtiles/{dataset_id}/{dataset_item_id}/",
+            "target_table": "tilesets",
+            "url_template": "{storage_endpoint}/{bucket_name}/3dtiles/{dataset_id}/{dataset_item_id}/",
+            "detection": {
+                "files": ["3dtiles/{dataset_id}/{dataset_item_id}/tileset.json"],
+                "flag": "has_3dtiles"
             }
         }
     }
@@ -206,7 +292,6 @@ def build_workflow_parameters(
     workflow_name: str,
     dataset_id: int,
     dataset_item_id: Optional[int] = None,
-    bucket: str = "products-storage"
 ) -> Dict[int, Dict[str, str]]:
     """
     Build workflow parameters with dynamic step ID resolution.
@@ -215,24 +300,34 @@ def build_workflow_parameters(
     1. Uses provided dataset_item_id or queries Supabase for it
     2. Queries Galaxy for actual workflow step IDs (annotation-based)
     3. Builds parameter dict with integer keys (Galaxy step IDs) and export paths
+    4. Uses galaxy_client.config for file source scheme and bucket ID
     
     Args:
-        galaxy_client: Connected Galaxy client
+        galaxy_client: Connected Galaxy client (provides file source config)
         supabase_client: Connected Supabase client
         workflow_name: Name of the workflow
         dataset_id: ID of the dataset to process
         dataset_item_id: Optional specific dataset_item_id (for multi-file datasets)
-        bucket: S3 bucket name (default: "products-storage")
         
     Returns:
         Dict with integer keys (Galaxy step IDs) and parameter dicts containing 'd_uri'
         Returns empty dict if no export steps found or dataset_item not found
         
     Example:
+        # Local Galaxy:
         >>> params = build_workflow_parameters(galaxy, supabase, "Standard", 123)
         >>> params
         {3: {"d_uri": "gxfiles://products-storage/standard/123/456/"}}
+        
+        # Galaxy EU (with config: GALAXY_FILE_SOURCE_SCHEME=gxuserfiles, GALAXY_FILE_SOURCE_PRODUCTS=uuid):
+        >>> params = build_workflow_parameters(galaxy, supabase, "Standard", 123)
+        >>> params
+        {3: {"d_uri": "gxuserfiles://e1d3f62b-2abb.../standard/123/456/"}}
     """
+    # Get file source config from galaxy client
+    file_source_products = galaxy_client.config.file_source_products
+    file_source_scheme = galaxy_client.config.file_source_scheme
+    
     try:
         # Use provided dataset_item_id or get first one from Supabase
         if dataset_item_id is None:
@@ -271,16 +366,16 @@ def build_workflow_parameters(
                 dataset_item_id=dataset_item_id
             )
             
-            # Build the full gxfiles:// URI
+            # Build the full URI using config (gxfiles:// for local, gxuserfiles:// for Galaxy EU)
+            uri = f"{file_source_scheme}://{file_source_products}/{path}"
             workflow_parameters[step_id] = {
-                "d_uri": f"gxfiles://{bucket}/{path}"
+                "d_uri": uri
             }
-            logger.debug(f"Step {step_id}: d_uri = gxfiles://{bucket}/{path}")
+            logger.debug(f"Step {step_id}: d_uri = {uri}")
     
     logger.info(
         f"Built parameters for workflow '{workflow_name}' with {len(workflow_parameters)} export steps "
-        f"(dataset_id={dataset_id}, dataset_item_id={dataset_item_id})"
+        f"(dataset_id={dataset_id}, dataset_item_id={dataset_item_id}, scheme={file_source_scheme})"
     )
     
     return workflow_parameters
-

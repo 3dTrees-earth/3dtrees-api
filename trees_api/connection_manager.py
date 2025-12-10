@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from trees_api.config import AppConfig
 from trees_api.galaxy_client import GalaxyClient
 from trees_api.supabase_client import SupabaseClient
-from trees_api.storage_client import StorageClient
+from trees_api.storage_client import StorageClient, UploaderStorageClient
 
 logger = logging.getLogger("uvicorn")
 
@@ -54,7 +54,8 @@ class ConnectionManager:
             self.config = config or AppConfig()
             self.galaxy = ClientState()
             self.supabase = ClientState()
-            self.storage = ClientState()
+            self.storage = ClientState()  # Processor storage (read raw, write products)
+            self.uploader_storage = ClientState()  # Uploader storage (write raw)
             self._retry_task: Optional[asyncio.Task] = None
             self._initialized = True
     
@@ -109,22 +110,26 @@ class ConnectionManager:
                 client = SupabaseClient(self.config.supabase)
                 client.connect()
                 
-                # Try to authenticate
-                try:
-                    client.authenticate_user(client.email, client.password)
-                except Exception as e:
-                    # Only attempt registration if it's an authentication failure
-                    error_msg = str(e).lower()
-                    if "authentication failed" in error_msg or "invalid login credentials" in error_msg or "invalid credentials" in error_msg:
-                        try:
-                            logger.info(f"Authentication failed, attempting to register user: {client.email}")
-                            client.register_user(client.email, client.password)
-                            logger.info(f"New user created: {client.email}")
-                        except Exception as reg_error:
-                            logger.error(f"Failed to register user: {reg_error}")
-                            raise Exception(f"Authentication failed and registration failed: {reg_error}")
-                    else:
-                        raise e
+                # Try to authenticate (only if email and password are provided)
+                # With service_role key, user auth is optional - the key already has full access
+                if client.email and client.password:
+                    try:
+                        client.authenticate_user(client.email, client.password)
+                    except Exception as e:
+                        # Only attempt registration if it's an authentication failure
+                        error_msg = str(e).lower()
+                        if "authentication failed" in error_msg or "invalid login credentials" in error_msg or "invalid credentials" in error_msg:
+                            try:
+                                logger.info(f"Authentication failed, attempting to register user: {client.email}")
+                                client.register_user(client.email, client.password)
+                                logger.info(f"New user created: {client.email}")
+                            except Exception as reg_error:
+                                logger.error(f"Failed to register user: {reg_error}")
+                                raise Exception(f"Authentication failed and registration failed: {reg_error}")
+                        else:
+                            raise e
+                else:
+                    logger.info("Using Supabase with service key (no user authentication)")
                 
                 # Update state
                 self.supabase.client = client
@@ -181,6 +186,42 @@ class ConnectionManager:
                 self.storage.retry_count += 1
                 return None
     
+    def connect_uploader_storage(self) -> Optional[UploaderStorageClient]:
+        """
+        Connect to Storage with uploader credentials. Returns cached client if already connected.
+        Used for generating presigned URLs for frontend uploads to raw bucket.
+        """
+        with self._lock:
+            # Return cached client if already connected
+            if self.uploader_storage.connected and self.uploader_storage.client:
+                return self.uploader_storage.client
+            
+            # Try to connect
+            try:
+                logger.info("Connecting to Storage (uploader credentials)...")
+                client = UploaderStorageClient(self.config.storage)
+                client.connect()
+                
+                # Update state
+                self.uploader_storage.client = client
+                self.uploader_storage.connected = True
+                self.uploader_storage.last_attempt = datetime.now()
+                self.uploader_storage.last_success = datetime.now()
+                self.uploader_storage.error_message = None
+                self.uploader_storage.retry_count = 0
+                
+                logger.info("Uploader storage connection successful")
+                return client
+                
+            except Exception as e:
+                logger.error(f"Failed to connect uploader to Storage: {e}")
+                self.uploader_storage.connected = False
+                self.uploader_storage.client = None
+                self.uploader_storage.last_attempt = datetime.now()
+                self.uploader_storage.error_message = str(e)
+                self.uploader_storage.retry_count += 1
+                return None
+    
     def get_galaxy_client(self) -> Optional[GalaxyClient]:
         """Get Galaxy client (from cache or create new connection)."""
         return self.connect_galaxy()
@@ -190,8 +231,12 @@ class ConnectionManager:
         return self.connect_supabase()
     
     def get_storage_client(self) -> Optional[StorageClient]:
-        """Get Storage client (from cache or create new connection)."""
+        """Get Storage client with processor credentials (from cache or create new connection)."""
         return self.connect_storage()
+    
+    def get_uploader_storage_client(self) -> Optional[UploaderStorageClient]:
+        """Get Storage client with uploader credentials (from cache or create new connection)."""
+        return self.connect_uploader_storage()
     
     def reconnect_all(self):
         """Attempt to reconnect all disconnected clients."""
@@ -206,11 +251,16 @@ class ConnectionManager:
         if not self.storage.connected:
             logger.info("Retrying Storage connection...")
             self.connect_storage()
+        
+        if not self.uploader_storage.connected:
+            logger.info("Retrying Uploader Storage connection...")
+            self.connect_uploader_storage()
     
     def all_connected(self) -> bool:
         """Check if all clients are connected."""
         with self._lock:
-            return self.galaxy.connected and self.supabase.connected and self.storage.connected
+            return (self.galaxy.connected and self.supabase.connected and 
+                    self.storage.connected and self.uploader_storage.connected)
     
     def get_status(self) -> dict:
         """Get status of all client connections."""
@@ -236,6 +286,13 @@ class ConnectionManager:
                     "last_success": self.storage.last_success.isoformat() if self.storage.last_success else None,
                     "error": self.storage.error_message,
                     "retry_count": self.storage.retry_count
+                },
+                "uploader_storage": {
+                    "connected": self.uploader_storage.connected,
+                    "last_attempt": self.uploader_storage.last_attempt.isoformat() if self.uploader_storage.last_attempt else None,
+                    "last_success": self.uploader_storage.last_success.isoformat() if self.uploader_storage.last_success else None,
+                    "error": self.uploader_storage.error_message,
+                    "retry_count": self.uploader_storage.retry_count
                 }
             }
     
@@ -277,6 +334,7 @@ class ConnectionManager:
             self.galaxy = ClientState()
             self.supabase = ClientState()
             self.storage = ClientState()
+            self.uploader_storage = ClientState()
 
 # Global instance
 connection_manager = ConnectionManager()
