@@ -47,7 +47,7 @@ from trees_api.supabase_client import SupabaseClient
 from trees_api.storage_client import StorageClient
 from trees_api.config import GalaxyConfig, SupabaseConfig, StorageConfig
 from trees_api.status_sync import sync_workflow_statuses
-from trees_api.product_sync import sync_workflow_products
+from trees_api.history_sync import sync_history_outputs
 # Note: result_sync is NOT imported - Galaxy export tool writes outputs directly to S3
 # so we don't need to download from Galaxy history and re-upload
 
@@ -120,12 +120,11 @@ def run_sync_once():
         logger.info("Syncing workflow statuses from Galaxy...")
         status_stats = sync_workflow_statuses(galaxy_client, supabase_client)
         
-        # SLOW: Sync products with threading (~5-30 seconds depending on S3 and workflows)
-        # This only checks for file existence and downloads small JSON metadata files
-        # Galaxy's export tool already writes the actual data files directly to S3
-        logger.info("Syncing workflow products from S3...")
-        product_stats = sync_workflow_products(
-            galaxy_client, supabase_client, storage_client, storage_config
+        # Sync history outputs for finished workflows
+        # This stores output paths in galaxy_histories.outputs and ingests metadata JSON
+        logger.info("Syncing history outputs...")
+        history_stats = sync_history_outputs(
+            supabase_client, storage_client, storage_config
         )
         
         # Note: We do NOT sync results from Galaxy history to S3 here because:
@@ -136,7 +135,7 @@ def run_sync_once():
         # Log final statistics
         logger.info("Status synchronization completed successfully")
         logger.info(f"Status sync stats: {status_stats}")
-        logger.info(f"Product sync stats: {product_stats}")
+        logger.info(f"History sync stats: {history_stats}")
         
         # Note: Don't sign out - this would invalidate ALL sessions for this user
         # including browser sessions. The status pooler shares credentials with
@@ -145,7 +144,7 @@ def run_sync_once():
         
         return {
             "status_stats": status_stats,
-            "product_stats": product_stats,
+            "history_stats": history_stats,
             "success": True
         }
         

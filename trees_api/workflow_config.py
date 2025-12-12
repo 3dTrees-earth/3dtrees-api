@@ -62,58 +62,63 @@ def _extract_las_info(data: any, standardized: bool) -> dict | None:
 # Annotation patterns to match export steps
 # These must match the annotations in the .ga workflow files!
 # Pattern keys are used for matching (case-insensitive, supports regex)
+# 
+# Path structure: {s3_base_path}/{product_type}/
+# Where s3_base_path = {dataset_id}/{dataset_item_id}/ (from galaxy_histories table)
+# This groups all products for a dataset under one directory
 WORKFLOW_EXPORT_ANNOTATIONS = {
     "Standard": {
-        "export standardized laz": "standard/{dataset_id}/{dataset_item_id}/",
-        "export metadata json": "standard/{dataset_id}/{dataset_item_id}/",
-        "export convex hull": "standard/{dataset_id}/{dataset_item_id}/"
+        "export standardized laz": "{s3_base_path}standard/",
+        "export metadata json": "{s3_base_path}standard/",
+        "export convex hull": "{s3_base_path}standard/"
     },
     "Segmentation": {
-        "export segmented": "segmentation/{dataset_id}/{dataset_item_id}/"
+        "export segmented": "{s3_base_path}segmentation/"
     },
     "Overviews": {
-        "export top view": "overviews/{dataset_id}/{dataset_item_id}/",
-        "export section view": "overviews/{dataset_id}/{dataset_item_id}/",
-        "export.*animation|export.*gif": "overviews/{dataset_id}/{dataset_item_id}/"
+        "export top view": "{s3_base_path}overviews/",
+        "export section view": "{s3_base_path}overviews/",
+        "export.*animation|export.*gif": "{s3_base_path}overviews/"
     },
     "Py3DTiles": {
-        "export.*tileset": "3dtiles/{dataset_id}/{dataset_item_id}/",
-        "export.*preview": "3dtiles/{dataset_id}/{dataset_item_id}/",
-        "export.*points.*tiles|points.*subdirectory": "3dtiles/{dataset_id}/{dataset_item_id}/points/"
+        "export.*tileset": "{s3_base_path}3dtiles/",
+        "export.*preview": "{s3_base_path}3dtiles/",
+        "export.*points.*tiles|points.*subdirectory": "{s3_base_path}3dtiles/points/"
     },
     "EndToEndPipeline": {
-        "export standardized laz": "standard/{dataset_id}/{dataset_item_id}/",
-        "export metadata json": "standard/{dataset_id}/{dataset_item_id}/",
-        "export convex hull": "standard/{dataset_id}/{dataset_item_id}/",
-        "export top view": "overviews/{dataset_id}/{dataset_item_id}/",
-        "export section view": "overviews/{dataset_id}/{dataset_item_id}/",
-        "export overview.*gif|export overview animation": "overviews/{dataset_id}/{dataset_item_id}/",
-        "export segmented laz": "segmentation/{dataset_id}/{dataset_item_id}/",
-        "export tileset": "3dtiles/{dataset_id}/{dataset_item_id}/",
-        "export preview": "3dtiles/{dataset_id}/{dataset_item_id}/",
-        "export points tiles": "3dtiles/{dataset_id}/{dataset_item_id}/points/"
+        "export standardized laz": "{s3_base_path}standard/",
+        "export metadata json": "{s3_base_path}standard/",
+        "export convex hull": "{s3_base_path}standard/",
+        "export top view": "{s3_base_path}overviews/",
+        "export section view": "{s3_base_path}overviews/",
+        "export overview.*gif|export overview animation": "{s3_base_path}overviews/",
+        "export segmented laz": "{s3_base_path}segmentation/",
+        "export tileset": "{s3_base_path}3dtiles/",
+        "export preview": "{s3_base_path}3dtiles/",
+        "export points tiles": "{s3_base_path}3dtiles/points/"
     },
     # Galaxy EU version - no metadata_json or convex_hull (not available in Galaxy EU tool version)
     "EndToEndPipeline-GalaxyEU": {
-        "export standardized laz": "standard/{dataset_id}/{dataset_item_id}/",
-        "export top view": "overviews/{dataset_id}/{dataset_item_id}/",
-        "export section view": "overviews/{dataset_id}/{dataset_item_id}/",
-        "export overview.*gif|export overview animation": "overviews/{dataset_id}/{dataset_item_id}/",
-        "export segmented laz": "segmentation/{dataset_id}/{dataset_item_id}/",
-        "export tileset": "3dtiles/{dataset_id}/{dataset_item_id}/",
-        "export preview": "3dtiles/{dataset_id}/{dataset_item_id}/",
-        "export points tiles": "3dtiles/{dataset_id}/{dataset_item_id}/points/"
+        "export standardized laz": "{s3_base_path}standard/",
+        "export top view": "{s3_base_path}overviews/",
+        "export section view": "{s3_base_path}overviews/",
+        "export overview.*gif|export overview animation": "{s3_base_path}overviews/",
+        "export segmented laz": "{s3_base_path}segmentation/",
+        "export tileset": "{s3_base_path}3dtiles/",
+        "export preview": "{s3_base_path}3dtiles/",
+        "export points tiles": "{s3_base_path}3dtiles/points/"
     }
 }
 
 
 # Workflow metadata ingestion configuration
 # Maps workflow names to metadata extraction and database ingestion specs
+# Path structure: {s3_base_path}/{product_type}/ where s3_base_path = {dataset_id}/{dataset_item_id}/
 WORKFLOW_METADATA_INGESTION = {
     "EndToEndPipeline": {
         "standard": {
             "metadata_files": ["metadata.json", "convex_hull_wgs84.GeoJSON"],
-            "s3_path_template": "standard/{dataset_id}/{dataset_item_id}/",
+            "s3_path_template": "{s3_base_path}standard/",
             "target_table": "standard",
             "field_mappings": {
                 "metadata.json": {
@@ -127,36 +132,36 @@ WORKFLOW_METADATA_INGESTION = {
             },
             "detection": {
                 "files": [
-                    "standard/{dataset_id}/{dataset_item_id}/standardized.laz",
-                    "standard/{dataset_id}/{dataset_item_id}/metadata.json"
+                    "{s3_base_path}standard/standardized.laz",
+                    "{s3_base_path}standard/metadata.json"
                 ],
                 "flag": "has_standardisation"
             }
         },
         "overviews": {
-            "s3_path_template": "overviews/{dataset_id}/{dataset_item_id}/",
+            "s3_path_template": "{s3_base_path}overviews/",
             "target_table": "overviews",
-            "url_template": "{storage_endpoint}/{bucket_name}/overviews/{dataset_id}/{dataset_item_id}/",
+            "url_template": "{storage_endpoint}/{bucket_name}/{s3_base_path}overviews/",
             "detection": {
-                "files": ["overviews/{dataset_id}/{dataset_item_id}/top_view_00.png"],
+                "files": ["{s3_base_path}overviews/top_view_00.png"],
                 "flag": "has_overviews"
             }
         },
         "segmentation": {
-            "s3_path_template": "segmentation/{dataset_id}/{dataset_item_id}/",
+            "s3_path_template": "{s3_base_path}segmentation/",
             "target_table": "segmentations",
-            "url_template": "{storage_endpoint}/{bucket_name}/segmentation/{dataset_id}/{dataset_item_id}/segmented.laz",
+            "url_template": "{storage_endpoint}/{bucket_name}/{s3_base_path}segmentation/segmented.laz",
             "detection": {
-                "files": ["segmentation/{dataset_id}/{dataset_item_id}/segmented.laz"],
+                "files": ["{s3_base_path}segmentation/segmented.laz"],
                 "flag": "has_segmentation"
             }
         },
         "3dtiles": {
-            "s3_path_template": "3dtiles/{dataset_id}/{dataset_item_id}/",
+            "s3_path_template": "{s3_base_path}3dtiles/",
             "target_table": "tilesets",
-            "url_template": "{storage_endpoint}/{bucket_name}/3dtiles/{dataset_id}/{dataset_item_id}/",
+            "url_template": "{storage_endpoint}/{bucket_name}/{s3_base_path}3dtiles/",
             "detection": {
-                "files": ["3dtiles/{dataset_id}/{dataset_item_id}/tileset.json"],
+                "files": ["{s3_base_path}3dtiles/tileset.json"],
                 "flag": "has_3dtiles"
             }
         }
@@ -164,7 +169,7 @@ WORKFLOW_METADATA_INGESTION = {
     "Standard": {
         "standard": {
             "metadata_files": ["metadata.json", "convex_hull_wgs84.GeoJSON"],
-            "s3_path_template": "standard/{dataset_id}/{dataset_item_id}/",
+            "s3_path_template": "{s3_base_path}standard/",
             "target_table": "standard",
             "field_mappings": {
                 "metadata.json": {
@@ -178,8 +183,8 @@ WORKFLOW_METADATA_INGESTION = {
             },
             "detection": {
                 "files": [
-                    "standard/{dataset_id}/{dataset_item_id}/standardized.laz",
-                    "standard/{dataset_id}/{dataset_item_id}/metadata.json"
+                    "{s3_base_path}standard/standardized.laz",
+                    "{s3_base_path}standard/metadata.json"
                 ],
                 "flag": "has_standardisation"
             }
@@ -189,38 +194,41 @@ WORKFLOW_METADATA_INGESTION = {
     "EndToEndPipeline-GalaxyEU": {
         "standard": {
             "metadata_files": [],  # Galaxy EU tool doesn't produce metadata.json or convex_hull
-            "s3_path_template": "standard/{dataset_id}/{dataset_item_id}/",
+            "s3_path_template": "{s3_base_path}standard/",
             "target_table": "standard",
             "field_mappings": {},
             "detection": {
-                "files": ["standard/{dataset_id}/{dataset_item_id}/standardized.laz"],
+                # Galaxy export names file after dataset name: "Standardized Point Cloud.laz"
+                "files": ["{s3_base_path}standard/Standardized Point Cloud.laz"],
                 "flag": "has_standardisation"
             }
         },
         "overviews": {
-            "s3_path_template": "overviews/{dataset_id}/{dataset_item_id}/",
+            "s3_path_template": "{s3_base_path}overviews/",
             "target_table": "overviews",
-            "url_template": "{storage_endpoint}/{bucket_name}/overviews/{dataset_id}/{dataset_item_id}/",
+            "url_template": "{storage_endpoint}/{bucket_name}/{s3_base_path}overviews/",
             "detection": {
-                "files": ["overviews/{dataset_id}/{dataset_item_id}/top_view_00.png"],
+                # Galaxy export adds extra extension: top_view_00.png.png
+                "files": ["{s3_base_path}overviews/top_view_00.png.png"],
                 "flag": "has_overviews"
             }
         },
         "segmentation": {
-            "s3_path_template": "segmentation/{dataset_id}/{dataset_item_id}/",
+            "s3_path_template": "{s3_base_path}segmentation/",
             "target_table": "segmentations",
-            "url_template": "{storage_endpoint}/{bucket_name}/segmentation/{dataset_id}/{dataset_item_id}/segmented.laz",
+            # Galaxy export names file after dataset name: "Merged Point Cloud.laz"
+            "url_template": "{storage_endpoint}/{bucket_name}/{s3_base_path}segmentation/Merged Point Cloud.laz",
             "detection": {
-                "files": ["segmentation/{dataset_id}/{dataset_item_id}/segmented.laz"],
+                "files": ["{s3_base_path}segmentation/Merged Point Cloud.laz"],
                 "flag": "has_segmentation"
             }
         },
         "3dtiles": {
-            "s3_path_template": "3dtiles/{dataset_id}/{dataset_item_id}/",
+            "s3_path_template": "{s3_base_path}3dtiles/",
             "target_table": "tilesets",
-            "url_template": "{storage_endpoint}/{bucket_name}/3dtiles/{dataset_id}/{dataset_item_id}/",
+            "url_template": "{storage_endpoint}/{bucket_name}/{s3_base_path}3dtiles/",
             "detection": {
-                "files": ["3dtiles/{dataset_id}/{dataset_item_id}/tileset.json"],
+                "files": ["{s3_base_path}3dtiles/tileset.json"],
                 "flag": "has_3dtiles"
             }
         }
@@ -292,15 +300,17 @@ def build_workflow_parameters(
     workflow_name: str,
     dataset_id: int,
     dataset_item_id: Optional[int] = None,
+    s3_base_path: Optional[str] = None,
 ) -> Dict[int, Dict[str, str]]:
     """
     Build workflow parameters with dynamic step ID resolution.
     
     This function:
     1. Uses provided dataset_item_id or queries Supabase for it
-    2. Queries Galaxy for actual workflow step IDs (annotation-based)
-    3. Builds parameter dict with integer keys (Galaxy step IDs) and export paths
-    4. Uses galaxy_client.config for file source scheme and bucket ID
+    2. Gets s3_base_path from galaxy_histories or falls back to {dataset_id}/{dataset_item_id}/
+    3. Queries Galaxy for actual workflow step IDs (annotation-based)
+    4. Builds parameter dict with integer keys (Galaxy step IDs) and export paths
+    5. Uses galaxy_client.config for file source scheme and bucket ID
     
     Args:
         galaxy_client: Connected Galaxy client (provides file source config)
@@ -308,21 +318,22 @@ def build_workflow_parameters(
         workflow_name: Name of the workflow
         dataset_id: ID of the dataset to process
         dataset_item_id: Optional specific dataset_item_id (for multi-file datasets)
+        s3_base_path: Optional S3 base path (from galaxy_histories). Falls back to {dataset_id}/{dataset_item_id}/
         
     Returns:
         Dict with integer keys (Galaxy step IDs) and parameter dicts containing 'd_uri'
         Returns empty dict if no export steps found or dataset_item not found
         
     Example:
-        # Local Galaxy:
-        >>> params = build_workflow_parameters(galaxy, supabase, "Standard", 123)
+        # Local Galaxy with s3_base_path="123/456/":
+        >>> params = build_workflow_parameters(galaxy, supabase, "Standard", 123, s3_base_path="123/456/")
         >>> params
-        {3: {"d_uri": "gxfiles://products-storage/standard/123/456/"}}
+        {3: {"d_uri": "gxfiles://products-storage/123/456/standard/"}}
         
-        # Galaxy EU (with config: GALAXY_FILE_SOURCE_SCHEME=gxuserfiles, GALAXY_FILE_SOURCE_PRODUCTS=uuid):
-        >>> params = build_workflow_parameters(galaxy, supabase, "Standard", 123)
+        # Galaxy EU:
+        >>> params = build_workflow_parameters(galaxy, supabase, "Standard", 123, s3_base_path="123/456/")
         >>> params
-        {3: {"d_uri": "gxuserfiles://e1d3f62b-2abb.../standard/123/456/"}}
+        {3: {"d_uri": "gxuserfiles://uuid/123/456/standard/"}}
     """
     # Get file source config from galaxy client
     file_source_products = galaxy_client.config.file_source_products
@@ -346,6 +357,16 @@ def build_workflow_parameters(
         logger.error(f"Failed to get dataset_item_id for dataset {dataset_id}: {e}")
         return {}
     
+    # Get s3_base_path from galaxy_histories or fall back to default
+    if s3_base_path is None:
+        history = supabase_client.get_galaxy_history_by_dataset(dataset_id)
+        if history and history.get("s3_base_path"):
+            s3_base_path = history["s3_base_path"]
+        else:
+            # Fall back to legacy format
+            s3_base_path = f"{dataset_id}/{dataset_item_id}/"
+        logger.debug(f"Using s3_base_path: {s3_base_path}")
+    
     # Resolve actual Galaxy step IDs by annotation
     export_steps = resolve_export_step_ids(galaxy_client, workflow_name)
     
@@ -360,8 +381,9 @@ def build_workflow_parameters(
     for pattern, path_template in annotation_patterns.items():
         step_id = export_steps.get(pattern)
         if step_id:
-            # Format the path template with actual IDs
+            # Format the path template with s3_base_path
             path = path_template.format(
+                s3_base_path=s3_base_path,
                 dataset_id=dataset_id,
                 dataset_item_id=dataset_item_id
             )
@@ -375,7 +397,7 @@ def build_workflow_parameters(
     
     logger.info(
         f"Built parameters for workflow '{workflow_name}' with {len(workflow_parameters)} export steps "
-        f"(dataset_id={dataset_id}, dataset_item_id={dataset_item_id}, scheme={file_source_scheme})"
+        f"(dataset_id={dataset_id}, dataset_item_id={dataset_item_id}, s3_base_path={s3_base_path})"
     )
     
     return workflow_parameters

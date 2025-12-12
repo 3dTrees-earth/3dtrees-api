@@ -242,9 +242,12 @@ def test_endtoend_workflow(
     missing_outputs = []
     found_outputs = []
     
+    # Build s3_base_path for new path structure: {dataset_id}/{dataset_item_id}/
+    s3_base_path = f"{dataset_id}/{dataset_item_id}/"
+    
     # 9.1: Verify Standardized LAZ
     logger.info("\n  📁 Stage 1: Standardization")
-    standard_key = f"standard/{dataset_id}/{dataset_item_id}/standardized.laz"
+    standard_key = f"{s3_base_path}standard/standardized.laz"
     try:
         response = storage_client.client.head_object(
             Bucket="3dtrees-products",
@@ -262,7 +265,7 @@ def test_endtoend_workflow(
         logger.error(f"    ❌ standardized.laz: ERROR - {e}")
     
     # 9.1a: Verify Standardization Metadata JSON (from tool_standard)
-    metadata_key = f"standard/{dataset_id}/{dataset_item_id}/metadata.json"
+    metadata_key = f"{s3_base_path}standard/metadata.json"
     try:
         response = storage_client.client.head_object(
             Bucket="3dtrees-products",
@@ -280,7 +283,7 @@ def test_endtoend_workflow(
         logger.error(f"    ❌ metadata.json: ERROR - {e}")
     
     # 9.1b: Verify Convex Hull GeoJSON (from tool_standard)
-    convex_hull_key = f"standard/{dataset_id}/{dataset_item_id}/convex_hull.geojson"
+    convex_hull_key = f"{s3_base_path}standard/convex_hull.geojson"
     try:
         response = storage_client.client.head_object(
             Bucket="3dtrees-products",
@@ -299,7 +302,7 @@ def test_endtoend_workflow(
     
     # 9.2: Verify Overview Images (5 files)
     logger.info("\n  📁 Stage 2: Overviews")
-    export_base_path = f"overviews/{dataset_id}/{dataset_item_id}"
+    export_base_path = f"{s3_base_path}overviews"
     
     expected_overview_outputs = {
         'top_view_00.png': 'Top view perspective 0°',
@@ -332,7 +335,7 @@ def test_endtoend_workflow(
     
     # 9.3: Verify Segmented LAZ
     logger.info("\n  📁 Stage 3: Segmentation")
-    seg_key = f"segmentation/{dataset_id}/{dataset_item_id}/segmented.laz"
+    seg_key = f"{s3_base_path}segmentation/segmented.laz"
     try:
         response = storage_client.client.head_object(
             Bucket="3dtrees-products",
@@ -351,7 +354,7 @@ def test_endtoend_workflow(
     
     # 9.4: Verify 3D Tiles outputs
     logger.info("\n  📁 Stage 4: 3D Tiles")
-    tiles_base_path = f"3dtiles/{dataset_id}/{dataset_item_id}"
+    tiles_base_path = f"{s3_base_path}3dtiles"
     
     # Check tileset.json
     tileset_key = f"{tiles_base_path}/tileset.json"

@@ -111,7 +111,9 @@ def _invoke_workflow_with_file_source(
     history_name: str,
     workflow_parameters: Dict[int, Dict[str, str]],
     user_parameters: dict,
-    dataset_item_id: Optional[int] = None
+    dataset_item_id: Optional[int] = None,
+    history_id: Optional[str] = None,
+    history_fk: Optional[int] = None
 ):
     """
     Invoke Galaxy workflow using file source URI directly (no pre-import).
@@ -125,10 +127,12 @@ def _invoke_workflow_with_file_source(
         workflow_name: Name of the workflow to invoke
         dataset_id: ID of the dataset being processed (for Supabase record)
         file_source_uri: File source URI for Galaxy to fetch
-        history_name: Name of the Galaxy history
+        history_name: Name of the Galaxy history (for new history creation)
         workflow_parameters: Workflow step parameters (with integer keys)
         user_parameters: User-defined parameters to store
         dataset_item_id: Optional specific dataset_item_id (for multi-file datasets)
+        history_id: Optional existing Galaxy history ID to reuse
+        history_fk: Optional ID of the galaxy_histories record to link
         
     Returns:
         WorkflowInvocation object from Supabase
@@ -137,11 +141,12 @@ def _invoke_workflow_with_file_source(
         HTTPException: If workflow invocation or recording fails
     """
     try:
-        logger.info(f"Invoking workflow '{workflow_name}' with file source: {file_source_uri} (item_id={dataset_item_id})")
+        logger.info(f"Invoking workflow '{workflow_name}' with file source: {file_source_uri} (item_id={dataset_item_id}, history_id={history_id})")
         invocation_result = galaxy.invoke_workflow_with_file_source(
             workflow_name=workflow_name,
             file_source_uri=file_source_uri,
-            history_name=history_name,
+            history_name=history_name if not history_id else None,
+            history_id=history_id,
             parameters=workflow_parameters if workflow_parameters else None
         )
         logger.info(f"Workflow invoked successfully: {invocation_result['invocation_id']}")
@@ -157,7 +162,8 @@ def _invoke_workflow_with_file_source(
             workflow_uuid=invocation_result["invocation_id"],
             dataset_id=dataset_id,
             workflow_name=workflow_name,
-            dataset_item_id=dataset_item_id
+            dataset_item_id=dataset_item_id,
+            history_fk=history_fk
         )
         
         # Store user parameters if provided
@@ -257,12 +263,49 @@ def create_job(
     file_source_uri = galaxy.get_raw_file_source_uri(bucket_path)
     logger.info(f"Using direct file source: {file_source_uri} (dataset_id={dataset_id}, item_id={actual_item_id})")
     
-    # Ensure workflow exists and create history
-    history_name = f"{workflow_name} - {dataset_id}" + (f" (item {dataset_item_id})" if dataset_item_id else "")
+    # Ensure workflow exists
     try:
         galaxy.ensure_workflow_available(workflow_name)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Loading Workflow {workflow_name} failed: {e}")
+    
+    # Get or create Galaxy history for this dataset
+    # Each dataset has one history that accumulates all workflow outputs
+    history_name = f"{workflow_name} - {dataset_id}" + (f" (item {actual_item_id})" if actual_item_id else "")
+    
+    # Check if galaxy_history already exists for this dataset
+    existing_history = supabase.get_galaxy_history_by_dataset(int(dataset_id))
+    
+    if existing_history:
+        # Reuse existing history
+        galaxy_history_id = existing_history["history_id"]
+        galaxy_history_fk = existing_history["id"]
+        logger.info(f"Reusing existing Galaxy history {galaxy_history_id} for dataset {dataset_id}")
+    else:
+        # Create new Galaxy history
+        try:
+            new_history = galaxy.create_history(name=history_name)
+            galaxy_history_id = new_history.id
+            
+            # Record in galaxy_histories table
+            # S3 base path uses dataset_id/dataset_item_id/ for all products
+            s3_base_path = f"{dataset_id}/{actual_item_id}/"
+            history_record = supabase.get_or_create_galaxy_history(
+                dataset_id=int(dataset_id),
+                history_id=galaxy_history_id,
+                history_name=history_name,
+                s3_base_path=s3_base_path
+            )
+            galaxy_history_fk = history_record["id"]
+            logger.info(f"Created new Galaxy history {galaxy_history_id} for dataset {dataset_id}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to create Galaxy history: {e}")
+    
+    # Get s3_base_path from the history record (either existing or just created)
+    if existing_history:
+        s3_base_path = existing_history.get("s3_base_path", f"{dataset_id}/{actual_item_id}/")
+    else:
+        s3_base_path = history_record.get("s3_base_path", f"{dataset_id}/{actual_item_id}/")
     
     # Prepare workflow parameters (export paths, etc.)
     workflow_parameters = build_workflow_parameters(
@@ -270,7 +313,8 @@ def create_job(
         supabase_client=supabase,
         workflow_name=workflow_name,
         dataset_id=int(dataset_id),
-        dataset_item_id=actual_item_id
+        dataset_item_id=actual_item_id,
+        s3_base_path=s3_base_path
     )
     
     # Invoke workflow with file source URI directly - Galaxy fetches during execution
@@ -283,7 +327,9 @@ def create_job(
         history_name=history_name,
         workflow_parameters=workflow_parameters,
         user_parameters=parameters,
-        dataset_item_id=actual_item_id
+        dataset_item_id=actual_item_id,
+        history_id=galaxy_history_id,
+        history_fk=galaxy_history_fk
     )
 
 

@@ -605,14 +605,15 @@ class GalaxyClient:
         logger.info(f"Workflow '{workflow_name}' not found, importing from {workflow_file_path}")
         return self.import_workflow(workflow_file_path)
     
-    def _invoke_workflow_by_uuid(self, workflow_uuid: str, inputs: Dict[str, Any], history_name: str = None) -> Dict[str, Any]:
+    def _invoke_workflow_by_uuid(self, workflow_uuid: str, inputs: Dict[str, Any], history_name: str = None, history_id: str = None) -> Dict[str, Any]:
         """
         Invoke a workflow by UUID (internal method).
         
         Args:
             workflow_uuid: UUID of the workflow to invoke
             inputs: Dictionary of workflow inputs
-            history_name: Optional name for the history
+            history_name: Optional name for creating a new history
+            history_id: Optional existing Galaxy history ID to reuse
             
         Returns:
             Invocation data if successful
@@ -640,11 +641,16 @@ class GalaxyClient:
         workflow = self._find_workflow_by_name(workflow_name)
         
         try:
-            # Create a history if name provided
+            # Use existing history or create new one
             history = None
-            if history_name:
+            if history_id:
+                # Reuse existing history
+                history = self.gi.histories.get(history_id)
+                logger.info(f"Reusing existing history: {history.name} (ID: {history.id})")
+            elif history_name:
+                # Create new history
                 history = self.gi.histories.create(name=history_name)
-                logger.info(f"Created history: {history.name} (ID: {history.id})")
+                logger.info(f"Created new history: {history.name} (ID: {history.id})")
             
             logger.debug(f"Invoking workflow '{workflow.name}' (UUID: {workflow_uuid}) with inputs: {inputs}")
             
@@ -694,14 +700,15 @@ class GalaxyClient:
         # Ensure workflow exists (will import if needed)
         return self._ensure_workflow_exists_by_uuid(workflow_uuid)
     
-    def invoke_workflow(self, workflow_name: str, inputs: Dict[str, Any], history_name: str = None) -> Dict[str, Any]:
+    def invoke_workflow(self, workflow_name: str, inputs: Dict[str, Any], history_name: str = None, history_id: str = None) -> Dict[str, Any]:
         """
         Invoke a workflow by name (user-facing method).
         
         Args:
             workflow_name: Name of the workflow to invoke
             inputs: Dictionary of workflow inputs
-            history_name: Optional name for the history
+            history_name: Optional name for creating a new history
+            history_id: Optional existing Galaxy history ID to reuse
             
         Returns:
             Invocation data if successful
@@ -717,7 +724,7 @@ class GalaxyClient:
         self.ensure_workflow_available(workflow_name)
         
         # Invoke by UUID
-        return self._invoke_workflow_by_uuid(workflow_uuid, inputs, history_name)
+        return self._invoke_workflow_by_uuid(workflow_uuid, inputs, history_name, history_id)
     
     def prepare_workflow_inputs(self, workflow_name: str, dataset_id: str) -> Dict[str, Any]:
         """
@@ -792,6 +799,7 @@ class GalaxyClient:
         workflow_name: str, 
         file_source_uri: str, 
         history_name: str = None, 
+        history_id: str = None,
         parameters: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
@@ -803,7 +811,8 @@ class GalaxyClient:
         Args:
             workflow_name: Name of the workflow to invoke
             file_source_uri: File source URI (e.g., "gxuserfiles://uuid/path/to/file.laz")
-            history_name: Optional name for the history
+            history_name: Optional name for creating a new history
+            history_id: Optional existing Galaxy history ID to reuse
             parameters: Optional workflow step parameters (e.g., export path)
             
         Returns:
@@ -813,7 +822,7 @@ class GalaxyClient:
             KeyError: If workflow name is not registered
             RuntimeError: If workflow cannot be imported or invoked
         """
-        logger.info(f"🚀 invoke_workflow_with_file_source called: workflow={workflow_name}, uri={file_source_uri}, params={parameters}")
+        logger.info(f"🚀 invoke_workflow_with_file_source called: workflow={workflow_name}, uri={file_source_uri}, history_id={history_id}, params={parameters}")
         
         # Prepare inputs with file source URL
         inputs = self.prepare_workflow_inputs_from_url(workflow_name, file_source_uri)
@@ -822,8 +831,8 @@ class GalaxyClient:
         if parameters:
             inputs["parameters"] = parameters
         
-        # Invoke workflow
-        return self.invoke_workflow(workflow_name, inputs, history_name)
+        # Invoke workflow with existing history or create new one
+        return self.invoke_workflow(workflow_name, inputs, history_name, history_id)
     
     def invoke_workflow_with_dataset(self, workflow_name: str, dataset_id: str, history_name: str = None, parameters: Dict[str, Any] = None) -> Dict[str, Any]:
         """
