@@ -111,11 +111,12 @@ def ingest_metadata_json(
     """
     Ingest metadata JSON files from S3 into the outputs structure.
     
-    Downloads small JSON files and stores their content in outputs["metadata"].
+    Downloads the standard/metadata.json JSONL file and stores:
+    - raw_las_info: full metadata record for original input (standardized=false)
+    - standard_las_info: full metadata record after standardization (standardized=true)
+    - logs: array of all log messages from the processing
     
-    The standard/metadata.json file is in JSONL format with log messages
-    followed by actual metadata records. We extract the final standardized
-    metadata record which contains point_count, bbox, crs, dimensions.
+    No parsing/extraction - stores raw JSON objects as-is for maximum flexibility.
     
     Args:
         storage_client: Connected storage client
@@ -131,57 +132,31 @@ def ingest_metadata_json(
     # Try to ingest standard metadata.json (JSONL format)
     metadata_path = f"{s3_base_path}standard/metadata.json"
     try:
-        metadata_record = storage_client.download_jsonl_metadata(
+        # Download and parse all records (logs + raw + standardized)
+        logs, raw_record, standard_record = storage_client.download_jsonl_full(
             storage_config.products_bucket,
             metadata_path
         )
-        if metadata_record:
-            # Extract key fields for easy access
-            standard_meta = {
-                "point_count": metadata_record.get("point_count", [None])[0],
-                "standardized": metadata_record.get("standardized", [False])[0],
-            }
+        
+        # Store logs as array
+        if logs:
+            metadata["logs"] = logs
+            logger.info(f"Ingested {len(logs)} log messages")
+        
+        # Store raw input las_info as-is
+        if raw_record:
+            metadata["raw_las_info"] = raw_record
+            point_count = raw_record.get("point_count", [None])[0] if isinstance(raw_record.get("point_count"), list) else raw_record.get("point_count")
+            dims = raw_record.get("dimensions", [])
+            logger.info(f"Ingested raw_las_info: point_count={point_count}, dims={len(dims)}")
+        
+        # Store standardized las_info as-is
+        if standard_record:
+            metadata["standard_las_info"] = standard_record
+            point_count = standard_record.get("point_count", [None])[0] if isinstance(standard_record.get("point_count"), list) else standard_record.get("point_count")
+            dims = standard_record.get("dimensions", [])
+            logger.info(f"Ingested standard_las_info: point_count={point_count}, dims={len(dims)}")
             
-            # Extract bbox if available
-            bbox = metadata_record.get("bbox")
-            if bbox:
-                standard_meta["bbox"] = {
-                    "xmin": bbox.get("xmin", [None])[0],
-                    "ymin": bbox.get("ymin", [None])[0],
-                    "xmax": bbox.get("xmax", [None])[0],
-                    "ymax": bbox.get("ymax", [None])[0],
-                }
-            
-            # Extract CRS info if available
-            crs_data = metadata_record.get("crs")
-            if crs_data and isinstance(crs_data, list) and len(crs_data) > 0:
-                # CRS is a JSON string that needs parsing
-                import json
-                try:
-                    crs_parsed = json.loads(crs_data[0])
-                    # Try to extract EPSG from input WKT
-                    input_wkt = crs_parsed.get("input", [[""]])[0][0] if crs_parsed.get("input") else ""
-                    if "EPSG" in input_wkt:
-                        # Extract EPSG code - find the LAST AUTHORITY["EPSG","..."] which is the CRS code
-                        import re
-                        epsg_matches = re.findall(r'AUTHORITY\["EPSG","(\d+)"\]', input_wkt)
-                        if epsg_matches:
-                            # Last match is the CRS EPSG (e.g., 32632 for UTM)
-                            standard_meta["epsg"] = int(epsg_matches[-1])
-                    standard_meta["crs_wkt"] = input_wkt[:200] if input_wkt else None  # Truncate for storage
-                except (json.JSONDecodeError, TypeError, KeyError):
-                    pass
-            
-            # Extract Z bounds from dimensions for height info
-            dimensions = metadata_record.get("dimensions", [])
-            for dim in dimensions:
-                if isinstance(dim, dict) and dim.get("name", [None])[0] == "Z":
-                    standard_meta["z_min"] = dim.get("minimum", [None])[0]
-                    standard_meta["z_max"] = dim.get("maximum", [None])[0]
-                    break
-            
-            metadata["standard_metadata"] = standard_meta
-            logger.info(f"Ingested standard metadata: point_count={standard_meta.get('point_count')}")
     except Exception as e:
         logger.warning(f"Could not ingest {metadata_path}: {e}")
     
