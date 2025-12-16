@@ -63,9 +63,11 @@ def _extract_las_info(data: any, standardized: bool) -> dict | None:
 # These must match the annotations in the .ga workflow files!
 # Pattern keys are used for matching (case-insensitive, supports regex)
 # 
-# Path structure: {s3_base_path}/{product_type}/
-# Where s3_base_path = {dataset_id}/{dataset_item_id}/ (from galaxy_histories table)
-# This groups all products for a dataset under one directory
+# Path structure: {s3_base_path}{product_type}/
+# For collection workflows (EndToEndPipeline):
+#   - s3_base_path = {dataset_id}/
+#   - Galaxy's collection_auto export appends element identifier (item_id)
+#   - Final path: {dataset_id}/{product_type}/{item_id}/
 WORKFLOW_EXPORT_ANNOTATIONS = {
     "Standard": {
         "export standardized laz": "{s3_base_path}standard/",
@@ -86,6 +88,7 @@ WORKFLOW_EXPORT_ANNOTATIONS = {
         "export.*points.*tiles|points.*subdirectory": "{s3_base_path}3dtiles/points/"
     },
     "EndToEndPipeline": {
+        # Collection workflow - Galaxy appends element identifier to paths
         "export standardized laz": "{s3_base_path}standard/",
         "export metadata json": "{s3_base_path}standard/",
         "export convex hull": "{s3_base_path}standard/",
@@ -299,63 +302,43 @@ def build_workflow_parameters(
     supabase_client: "SupabaseClient", 
     workflow_name: str,
     dataset_id: int,
-    dataset_item_id: Optional[int] = None,
     s3_base_path: Optional[str] = None,
 ) -> Dict[int, Dict[str, str]]:
     """
     Build workflow parameters with dynamic step ID resolution.
     
+    For collection-based workflows (EndToEndPipeline):
+    - s3_base_path = {dataset_id}/
+    - Galaxy's collection_auto export appends element identifier (item_id)
+    - Final path: {dataset_id}/{product_type}/{item_id}/
+    
     This function:
-    1. Uses provided dataset_item_id or queries Supabase for it
-    2. Gets s3_base_path from galaxy_histories or falls back to {dataset_id}/{dataset_item_id}/
-    3. Queries Galaxy for actual workflow step IDs (annotation-based)
-    4. Builds parameter dict with integer keys (Galaxy step IDs) and export paths
-    5. Uses galaxy_client.config for file source scheme and bucket ID
+    1. Gets s3_base_path from galaxy_histories or falls back to {dataset_id}/
+    2. Queries Galaxy for actual workflow step IDs (annotation-based)
+    3. Builds parameter dict with integer keys (Galaxy step IDs) and export paths
+    4. Uses galaxy_client.config for file source scheme and bucket ID
     
     Args:
         galaxy_client: Connected Galaxy client (provides file source config)
         supabase_client: Connected Supabase client
         workflow_name: Name of the workflow
         dataset_id: ID of the dataset to process
-        dataset_item_id: Optional specific dataset_item_id (for multi-file datasets)
-        s3_base_path: Optional S3 base path (from galaxy_histories). Falls back to {dataset_id}/{dataset_item_id}/
+        s3_base_path: Optional S3 base path (from galaxy_histories). Falls back to {dataset_id}/
         
     Returns:
         Dict with integer keys (Galaxy step IDs) and parameter dicts containing 'd_uri'
-        Returns empty dict if no export steps found or dataset_item not found
+        Returns empty dict if no export steps found
         
     Example:
-        # Local Galaxy with s3_base_path="123/456/":
-        >>> params = build_workflow_parameters(galaxy, supabase, "Standard", 123, s3_base_path="123/456/")
+        # Local Galaxy with s3_base_path="324/":
+        >>> params = build_workflow_parameters(galaxy, supabase, "EndToEndPipeline", 324, s3_base_path="324/")
         >>> params
-        {3: {"d_uri": "gxfiles://products-storage/123/456/standard/"}}
-        
-        # Galaxy EU:
-        >>> params = build_workflow_parameters(galaxy, supabase, "Standard", 123, s3_base_path="123/456/")
-        >>> params
-        {3: {"d_uri": "gxuserfiles://uuid/123/456/standard/"}}
+        {3: {"d_uri": "gxfiles://products-storage/324/standard/"}}
+        # Galaxy collection export appends element ID: 324/standard/3024/
     """
     # Get file source config from galaxy client
     file_source_products = galaxy_client.config.file_source_products
     file_source_scheme = galaxy_client.config.file_source_scheme
-    
-    try:
-        # Use provided dataset_item_id or get first one from Supabase
-        if dataset_item_id is None:
-            dataset_item_resp = supabase_client.client.table("dataset_items")\
-                .select("id").eq("dataset_id", dataset_id).limit(1).execute()
-            
-            if not dataset_item_resp.data:
-                logger.warning(f"No dataset_item found for dataset {dataset_id}")
-                return {}
-            
-            dataset_item_id = dataset_item_resp.data[0]["id"]
-        
-        logger.debug(f"Using dataset_item_id {dataset_item_id} for dataset {dataset_id}")
-        
-    except Exception as e:
-        logger.error(f"Failed to get dataset_item_id for dataset {dataset_id}: {e}")
-        return {}
     
     # Get s3_base_path from galaxy_histories or fall back to default
     if s3_base_path is None:
@@ -363,8 +346,8 @@ def build_workflow_parameters(
         if history and history.get("s3_base_path"):
             s3_base_path = history["s3_base_path"]
         else:
-            # Fall back to legacy format
-            s3_base_path = f"{dataset_id}/{dataset_item_id}/"
+            # Fall back to collection-based format: {dataset_id}/
+            s3_base_path = f"{dataset_id}/"
         logger.debug(f"Using s3_base_path: {s3_base_path}")
     
     # Resolve actual Galaxy step IDs by annotation
@@ -384,8 +367,7 @@ def build_workflow_parameters(
             # Format the path template with s3_base_path
             path = path_template.format(
                 s3_base_path=s3_base_path,
-                dataset_id=dataset_id,
-                dataset_item_id=dataset_item_id
+                dataset_id=dataset_id
             )
             
             # Build the full URI using config (gxfiles:// for local, gxuserfiles:// for Galaxy EU)
@@ -397,7 +379,7 @@ def build_workflow_parameters(
     
     logger.info(
         f"Built parameters for workflow '{workflow_name}' with {len(workflow_parameters)} export steps "
-        f"(dataset_id={dataset_id}, dataset_item_id={dataset_item_id}, s3_base_path={s3_base_path})"
+        f"(dataset_id={dataset_id}, s3_base_path={s3_base_path})"
     )
     
     return workflow_parameters

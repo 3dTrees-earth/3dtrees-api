@@ -76,14 +76,21 @@ EXPECTED_OUTPUTS = {
 
 def build_outputs_structure(
     workflow_name: str,
-    s3_base_path: str
+    s3_base_path: str,
+    item_ids: Optional[List[int]] = None
 ) -> Dict[str, Any]:
     """
     Build the outputs structure for a workflow based on deterministic paths.
     
+    For collection workflows (EndToEndPipeline):
+    - s3_base_path = {dataset_id}/
+    - Galaxy's collection export appends element identifier (item_id)
+    - Final path: {s3_base_path}{product_type}/{item_id}/{filename}
+    
     Args:
         workflow_name: Name of the workflow
-        s3_base_path: Base S3 path (e.g., "322/3022/")
+        s3_base_path: Base S3 path (e.g., "324/" for collection workflows)
+        item_ids: List of dataset_item IDs for collection workflows
         
     Returns:
         Dict with outputs structure for galaxy_histories.outputs
@@ -91,13 +98,28 @@ def build_outputs_structure(
     expected = EXPECTED_OUTPUTS.get(workflow_name, {})
     
     outputs = {}
-    for product_type, files in expected.items():
-        product_outputs = []
-        for filename in files:
-            # Build full path: s3_base_path + product_type + filename
-            full_path = f"{s3_base_path}{product_type}/{filename}"
-            product_outputs.append(full_path)
-        outputs[product_type] = product_outputs
+    
+    # Collection workflow with item_ids
+    if item_ids:
+        for product_type, files in expected.items():
+            product_outputs = {}
+            for item_id in item_ids:
+                item_outputs = []
+                for filename in files:
+                    # Collection path: s3_base_path + product_type + item_id + filename
+                    full_path = f"{s3_base_path}{product_type}/{item_id}/{filename}"
+                    item_outputs.append(full_path)
+                product_outputs[str(item_id)] = item_outputs
+            outputs[product_type] = product_outputs
+    else:
+        # Legacy single-file workflow (backwards compatibility)
+        for product_type, files in expected.items():
+            product_outputs = []
+            for filename in files:
+                # Build full path: s3_base_path + product_type + filename
+                full_path = f"{s3_base_path}{product_type}/{filename}"
+                product_outputs.append(full_path)
+            outputs[product_type] = product_outputs
     
     return outputs
 
@@ -106,31 +128,81 @@ def ingest_metadata_json(
     storage_client: StorageClient,
     storage_config: StorageConfig,
     s3_base_path: str,
-    outputs: Dict[str, Any]
+    outputs: Dict[str, Any],
+    item_ids: Optional[List[int]] = None
 ) -> Dict[str, Any]:
     """
     Ingest metadata JSON files from S3 into the outputs structure.
+    
+    For collection workflows with item_ids:
+    - Ingests metadata for each item from {s3_base_path}standard/{item_id}/metadata.json
+    - Stores in outputs["metadata"][item_id]
+    
+    For legacy single-file workflows:
+    - Ingests from {s3_base_path}standard/metadata.json
+    - Stores in outputs["metadata"]
     
     Downloads the standard/metadata.json JSONL file and stores:
     - raw_las_info: full metadata record for original input (standardized=false)
     - standard_las_info: full metadata record after standardization (standardized=true)
     - logs: array of all log messages from the processing
     
-    No parsing/extraction - stores raw JSON objects as-is for maximum flexibility.
-    
     Args:
         storage_client: Connected storage client
         storage_config: Storage configuration
         s3_base_path: Base S3 path
         outputs: Existing outputs structure to update
+        item_ids: List of dataset_item IDs for collection workflows
         
     Returns:
         Updated outputs with metadata content
     """
+    if item_ids:
+        # Collection workflow - ingest metadata for each item
+        all_metadata = {}
+        for item_id in item_ids:
+            item_metadata = _ingest_single_metadata(
+                storage_client, storage_config,
+                f"{s3_base_path}standard/{item_id}/"
+            )
+            if item_metadata:
+                all_metadata[str(item_id)] = item_metadata
+        
+        if all_metadata:
+            outputs["metadata"] = all_metadata
+            logger.info(f"Ingested metadata for {len(all_metadata)} items")
+    else:
+        # Legacy single-file workflow
+        metadata = _ingest_single_metadata(
+            storage_client, storage_config,
+            f"{s3_base_path}standard/"
+        )
+        if metadata:
+            outputs["metadata"] = metadata
+    
+    return outputs
+
+
+def _ingest_single_metadata(
+    storage_client: StorageClient,
+    storage_config: StorageConfig,
+    standard_path: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Ingest metadata JSON files from a single path.
+    
+    Args:
+        storage_client: Connected storage client
+        storage_config: Storage configuration
+        standard_path: Path to standard directory (ending with /)
+        
+    Returns:
+        Dict with metadata content or None
+    """
     metadata = {}
     
     # Try to ingest standard metadata.json (JSONL format)
-    metadata_path = f"{s3_base_path}standard/metadata.json"
+    metadata_path = f"{standard_path}metadata.json"
     try:
         # Download and parse all records (logs + raw + standardized)
         logs, raw_record, standard_record = storage_client.download_jsonl_full(
@@ -141,27 +213,20 @@ def ingest_metadata_json(
         # Store logs as array
         if logs:
             metadata["logs"] = logs
-            logger.info(f"Ingested {len(logs)} log messages")
         
         # Store raw input las_info as-is
         if raw_record:
             metadata["raw_las_info"] = raw_record
-            point_count = raw_record.get("point_count", [None])[0] if isinstance(raw_record.get("point_count"), list) else raw_record.get("point_count")
-            dims = raw_record.get("dimensions", [])
-            logger.info(f"Ingested raw_las_info: point_count={point_count}, dims={len(dims)}")
         
         # Store standardized las_info as-is
         if standard_record:
             metadata["standard_las_info"] = standard_record
-            point_count = standard_record.get("point_count", [None])[0] if isinstance(standard_record.get("point_count"), list) else standard_record.get("point_count")
-            dims = standard_record.get("dimensions", [])
-            logger.info(f"Ingested standard_las_info: point_count={point_count}, dims={len(dims)}")
             
     except Exception as e:
-        logger.warning(f"Could not ingest {metadata_path}: {e}")
+        logger.debug(f"Could not ingest {metadata_path}: {e}")
     
     # Try to ingest convex hull GeoJSON
-    convex_hull_path = f"{s3_base_path}standard/convex_hull.geojson"
+    convex_hull_path = f"{standard_path}convex_hull.geojson"
     try:
         convex_hull_json = storage_client.download_json(
             storage_config.products_bucket,
@@ -169,14 +234,10 @@ def ingest_metadata_json(
         )
         if convex_hull_json:
             metadata["convex_hull"] = convex_hull_json
-            logger.debug(f"Ingested convex hull from {convex_hull_path}")
     except Exception as e:
         logger.debug(f"Could not ingest {convex_hull_path}: {e}")
     
-    if metadata:
-        outputs["metadata"] = metadata
-    
-    return outputs
+    return metadata if metadata else None
 
 
 def sync_history_for_invocation(
@@ -185,10 +246,14 @@ def sync_history_for_invocation(
     storage_config: StorageConfig,
     invocation_id: str,
     workflow_name: str,
-    history_fk: int
+    history_fk: int,
+    dataset_id: int
 ) -> bool:
     """
     Sync outputs for a single workflow invocation to its galaxy_history.
+    
+    For collection workflows, queries all dataset_items for the dataset
+    and builds outputs for each item.
     
     Args:
         supabase_client: Connected Supabase client
@@ -197,6 +262,7 @@ def sync_history_for_invocation(
         invocation_id: Galaxy invocation ID
         workflow_name: Name of the workflow
         history_fk: ID of the galaxy_histories record
+        dataset_id: ID of the dataset (for querying items)
         
     Returns:
         True if sync was successful
@@ -218,12 +284,23 @@ def sync_history_for_invocation(
             logger.warning(f"No s3_base_path for history {history_fk}")
             return False
         
+        # Get dataset_items for collection workflows
+        item_ids = None
+        if workflow_name in ["EndToEndPipeline"]:  # Collection-based workflows
+            items_response = supabase_client.client.table("dataset_items").select(
+                "id"
+            ).eq("dataset_id", dataset_id).order("id").execute()
+            
+            if items_response.data:
+                item_ids = [item["id"] for item in items_response.data]
+                logger.info(f"Building outputs for {len(item_ids)} items in dataset {dataset_id}")
+        
         # Build outputs structure from deterministic paths
-        outputs = build_outputs_structure(workflow_name, s3_base_path)
+        outputs = build_outputs_structure(workflow_name, s3_base_path, item_ids)
         
         # Optionally ingest metadata JSON files
         outputs = ingest_metadata_json(
-            storage_client, storage_config, s3_base_path, outputs
+            storage_client, storage_config, s3_base_path, outputs, item_ids
         )
         
         # Update galaxy_histories.outputs
@@ -275,9 +352,9 @@ def sync_history_outputs(
     }
     
     try:
-        # Get finished workflows that need output sync
+        # Get finished workflows that need output sync (include dataset_id)
         response = supabase_client.client.table("galaxy_workflow_invocations").select(
-            "invocation_id, workflow_name, history_fk, status"
+            "invocation_id, workflow_name, history_fk, status, dataset_id"
         ).eq("status", "ok").eq("results_synced", False).not_.is_("history_fk", "null").execute()
         
         if not response.data:
@@ -292,6 +369,7 @@ def sync_history_outputs(
             invocation_id = workflow["invocation_id"]
             workflow_name = workflow["workflow_name"]
             history_fk = workflow["history_fk"]
+            dataset_id = workflow["dataset_id"]
             
             success = sync_history_for_invocation(
                 supabase_client,
@@ -299,7 +377,8 @@ def sync_history_outputs(
                 storage_config,
                 invocation_id,
                 workflow_name,
-                history_fk
+                history_fk,
+                dataset_id
             )
             
             if success:

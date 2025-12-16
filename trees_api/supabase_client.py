@@ -300,28 +300,24 @@ class SupabaseClient:
         
         return Dataset.model_validate(dataset_dict)
 
-    def create_workflow_invocation(self, workflow_uuid: str, dataset_id: int, workflow_name: str, dataset_item_id: Optional[int] = None, history_fk: Optional[int] = None) -> WorkflowInvocation:
+    def create_workflow_invocation(self, workflow_uuid: str, dataset_id: int, workflow_name: str, history_fk: Optional[int] = None) -> WorkflowInvocation:
+        """
+        Create a workflow invocation record.
+        
+        Args:
+            workflow_uuid: Galaxy invocation ID
+            dataset_id: ID of the dataset (parent of dataset_items)
+            workflow_name: Name of the workflow
+            history_fk: Optional ID of the galaxy_histories record to link
+            
+        Returns:
+            WorkflowInvocation object
+        """
         if not self.client:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
         
-        # Use provided dataset_item_id, or fall back to first item in dataset (legacy behavior)
-        if dataset_item_id is None:
-            # Get dataset_item_id from dataset_id (for single-file datasets, get first item)
-            dataset_item_resp = (
-                self.client.table("dataset_items")
-                .select("id")
-                .eq("dataset_id", dataset_id)
-                .limit(1)
-                .execute()
-            )
-            
-            if not dataset_item_resp.data:
-                raise ValueError(f"No dataset_item found for dataset_id {dataset_id}")
-            
-            dataset_item_id = dataset_item_resp.data[0]["id"]
-        
         invocation_data = {
-            "dataset_item_id": dataset_item_id,
+            "dataset_id": dataset_id,
             "invocation_id": workflow_uuid,
             "workflow_name": workflow_name,
             "status": "new",  # Galaxy state for newly created invocations
@@ -341,7 +337,6 @@ class SupabaseClient:
         
         response = self.client.table(self.invocations_table).insert(invocation_data).execute()
 
-        # Return the invocation data directly - model now uses dataset_item_id
         return WorkflowInvocation.model_validate(response.data[0])
     
     def get_workflow_invocations(self, status: Optional[str] = None, limit: int = 100, offset: int = 0, results_synced: Optional[bool] = None) -> List[WorkflowInvocation]:
@@ -387,10 +382,9 @@ class SupabaseClient:
     def get_workflow_invocations_by_dataset_id(self, dataset_id: int, limit: int = 100, offset: int = 0) -> List[WorkflowInvocation]:
         """
         Get workflow invocations for a specific dataset_id.
-        Note: This now queries by dataset_id but returns invocations that have dataset_item_id.
         
         Args:
-            dataset_id: The dataset ID to filter by (as string)
+            dataset_id: The dataset ID to filter by
             limit: Maximum number of invocations to return
             offset: Number of invocations to skip
             
@@ -404,18 +398,11 @@ class SupabaseClient:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
         
         try:
-            # Get dataset_item_ids for this dataset_id
-            dataset_items_resp = self.client.table("dataset_items").select("id").eq("dataset_id", dataset_id).execute()
-            dataset_item_ids = [item["id"] for item in dataset_items_resp.data]
-            
-            if not dataset_item_ids:
-                return []
-            
-            # Query invocations by dataset_item_id
+            # Query invocations directly by dataset_id
             response = (
                 self.client.table(self.invocations_table)
                 .select("*")
-                .in_("dataset_item_id", dataset_item_ids)
+                .eq("dataset_id", dataset_id)
                 .order("created_at", desc=True)
                 .limit(limit)
                 .offset(offset)
@@ -424,8 +411,6 @@ class SupabaseClient:
             
             invocations = []
             for invocation_data in response.data:
-                # Map dataset_item_id back to dataset_id for model compatibility
-                invocation_data["dataset_id"] = dataset_id
                 invocations.append(WorkflowInvocation.model_validate(invocation_data))
             
             logger.info(f"Retrieved {len(invocations)} workflow invocations for dataset {dataset_id}")

@@ -25,27 +25,27 @@
             "inputs": [
                 {
                     "description": "",
-                    "name": "LAS / LAZ File"
+                    "name": "LAS / LAZ Collection"
                 }
             ],
-            "label": "LAS / LAZ File",
-            "name": "Input dataset",
+            "label": "LAS / LAZ Collection",
+            "name": "Input dataset collection",
             "outputs": [],
             "position": {
                 "left": 0,
                 "top": 200
             },
             "tool_id": null,
-            "tool_state": "{\"optional\": false, \"format\": [\"laz\", \"las\"], \"tag\": null}",
+            "tool_state": "{\"optional\": false, \"format\": [\"laz\", \"las\"], \"collection_type\": \"list\"}",
             "tool_version": null,
-            "type": "data_input",
+            "type": "data_collection_input",
             "uuid": "22f3ccd0-cfb9-4680-a8fa-12bde78982bf",
             "when": null,
             "workflow_outputs": []
         },
         "1": {
             "annotation": "",
-            "content_id": "3dtrees_standard",
+            "content_id": "3dtrees_standardization",
             "errors": null,
             "id": 1,
             "input_connections": {
@@ -76,7 +76,7 @@
                 "top": 200
             },
             "post_job_actions": {},
-            "tool_id": "3dtrees_standard",
+            "tool_id": "3dtrees_standardization",
             "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}}",
             "tool_version": "1.0.1",
             "type": "tool",
@@ -85,12 +85,12 @@
             "workflow_outputs": []
         },
         "2": {
-            "annotation": "Export standardized LAZ to S3 products bucket",
+            "annotation": "Export standardized LAZ collection to S3 products bucket",
             "content_id": "export_remote",
             "errors": null,
             "id": 2,
             "input_connections": {
-                "export_type|infiles": {
+                "export_type|incollection": {
                     "id": 1,
                     "output_name": "pc_standardized"
                 }
@@ -110,7 +110,7 @@
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "858c42f7-c864-43a1-9b4b-b78607a1efb4",
@@ -118,12 +118,12 @@
             "workflow_outputs": []
         },
         "3": {
-            "annotation": "Export metadata JSON to S3 standard path",
+            "annotation": "Export metadata JSON collection to S3 standard path",
             "content_id": "export_remote",
             "errors": null,
             "id": 3,
             "input_connections": {
-                "export_type|infiles": {
+                "export_type|incollection": {
                     "id": 1,
                     "output_name": "metadata_json"
                 }
@@ -143,7 +143,7 @@
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "0d7eb767-f20a-42c8-a82b-69ccc542825e",
@@ -151,12 +151,12 @@
             "workflow_outputs": []
         },
         "4": {
-            "annotation": "Export convex hull GeoJSON to S3 standard path",
+            "annotation": "Export convex hull GeoJSON collection to S3 standard path",
             "content_id": "export_remote",
             "errors": null,
             "id": 4,
             "input_connections": {
-                "export_type|infiles": {
+                "export_type|incollection": {
                     "id": 1,
                     "output_name": "convex_hull"
                 }
@@ -176,7 +176,7 @@
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "d184378a-db62-43be-b5f3-b3cd0a5c1033",
@@ -291,12 +291,12 @@
             "workflow_outputs": []
         },
         "8": {
-            "annotation": "Export overview animation GIF to S3",
+            "annotation": "Export overview animation GIF collection to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 8,
             "input_connections": {
-                "export_type|infiles": {
+                "export_type|incollection": {
                     "id": 5,
                     "output_name": "overview_round"
                 }
@@ -316,7 +316,7 @@
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "0f3def89-7522-4e51-b6ec-5e59ef424487",
@@ -423,12 +423,12 @@
             "workflow_outputs": []
         },
         "12": {
-            "annotation": "Export segmented LAZ to S3 products bucket",
+            "annotation": "Export segmented LAZ collection to S3 products bucket",
             "content_id": "export_remote",
             "errors": null,
             "id": 12,
             "input_connections": {
-                "export_type|infiles": {
+                "export_type|incollection": {
                     "id": 11,
                     "output_name": "output_merge"
                 }
@@ -448,7 +448,7 @@
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "260ec8de-103c-429c-b4a9-96bafad6d323",
@@ -497,12 +497,12 @@
             "workflow_outputs": []
         },
         "14": {
-            "annotation": "Export tileset.json to S3 root",
+            "annotation": "Export tileset.json collection to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 14,
             "input_connections": {
-                "export_type|infiles": {
+                "export_type|incollection": {
                     "id": 13,
                     "output_name": "tileset_json"
                 }
@@ -522,7 +522,7 @@
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "121e5880-d693-4cf5-8a75-489cca8389ea",
@@ -530,12 +530,12 @@
             "workflow_outputs": []
         },
         "15": {
-            "annotation": "Export preview.pnts to S3 root",
+            "annotation": "Export preview.pnts collection to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 15,
             "input_connections": {
-                "export_type|infiles": {
+                "export_type|incollection": {
                     "id": 13,
                     "output_name": "preview_pnts"
                 }
@@ -555,7 +555,7 @@
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "0e934e30-2b67-49cf-9ddd-360079a97668",

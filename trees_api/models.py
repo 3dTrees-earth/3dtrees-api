@@ -30,7 +30,7 @@ class WorkflowName(StrEnum):
 class WorkflowInvocation(BaseModel):
     id: int
     invocation_id: str
-    dataset_item_id: int  # Updated: references dataset_items, not datasets directly
+    dataset_id: int  # References datasets (collection-based workflow)
     workflow_name: WorkflowName
     status: str = "new"  # Galaxy state - no enum needed
     created_at: datetime

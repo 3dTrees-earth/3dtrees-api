@@ -794,6 +794,98 @@ class GalaxyClient:
         
         return inputs
     
+    def prepare_collection_inputs_from_storage(
+        self, 
+        dataset_id: int, 
+        supabase_client
+    ) -> Dict[str, Any]:
+        """
+        Build collection input using deferred file-source URIs.
+        Galaxy fetches files directly from S3 during job execution.
+        
+        Args:
+            dataset_id: ID of the dataset (parent of dataset_items)
+            supabase_client: Supabase client for querying dataset_items
+            
+        Returns:
+            Dict for workflow inputs parameter with collection structure
+        """
+        # Get all dataset_items for this dataset
+        items = supabase_client.client.table("dataset_items")\
+            .select("id, bucket_path")\
+            .eq("dataset_id", dataset_id)\
+            .order("id")\
+            .execute()
+        
+        if not items.data:
+            raise ValueError(f"No dataset_items found for dataset_id={dataset_id}")
+        
+        # Build elements with gxfiles:// URIs
+        elements = []
+        for item in items.data:
+            file_uri = self.get_raw_file_source_uri(item["bucket_path"])
+            elements.append({
+                "class": "File",
+                "identifier": str(item["id"]),  # Element name = item_id
+                "location": file_uri,           # gxfiles://raw-storage/RAW/...
+                "ext": "laz"
+            })
+        
+        logger.info(f"Built collection input with {len(elements)} elements for dataset_id={dataset_id}")
+        
+        # Return collection input structure
+        return {
+            "0": {
+                "class": "Collection",
+                "collection_type": "list",
+                "elements": elements
+            }
+        }
+    
+    def invoke_workflow_with_collection(
+        self,
+        workflow_name: str,
+        dataset_id: int,
+        supabase_client,
+        history_name: str = None,
+        history_id: str = None,
+        parameters: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Invoke workflow with collection input from file sources.
+        Galaxy fetches files directly from S3 during job execution.
+        
+        Args:
+            workflow_name: Name of the workflow to invoke
+            dataset_id: ID of the dataset (parent of dataset_items)
+            supabase_client: Supabase client for querying dataset_items
+            history_name: Optional name for creating a new history
+            history_id: Optional existing Galaxy history ID to reuse
+            parameters: Optional workflow step parameters (e.g., export paths)
+            
+        Returns:
+            Invocation data if successful
+            
+        Raises:
+            KeyError: If workflow name is not registered
+            ValueError: If no dataset_items found for dataset_id
+            RuntimeError: If workflow cannot be imported or invoked
+        """
+        logger.info(f"🚀 invoke_workflow_with_collection called: workflow={workflow_name}, dataset_id={dataset_id}, history_id={history_id}")
+        
+        # Build collection input (no uploads needed - deferred fetch)
+        inputs = self.prepare_collection_inputs_from_storage(dataset_id, supabase_client)
+        
+        # Add step parameters if provided
+        if parameters:
+            inputs["parameters"] = parameters
+        
+        # Ensure workflow is available
+        self.ensure_workflow_available(workflow_name)
+        
+        # Invoke workflow - Galaxy handles deferred fetch
+        return self.invoke_workflow(workflow_name, inputs, history_name, history_id)
+    
     def invoke_workflow_with_file_source(
         self, 
         workflow_name: str, 
