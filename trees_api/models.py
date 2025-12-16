@@ -39,7 +39,7 @@ class WorkflowInvocation(BaseModel):
     
     # Separate JSONB fields for efficient comparison and updates
     steps: list = []
-    inputs: list = []
+    inputs: dict = {}  # Galaxy returns inputs as dict with step indices as keys
     outputs: dict = {}
     output_collections: dict = {}
     jobs: list = []

@@ -9,7 +9,7 @@ import logging
 from typing import Dict
 from datetime import datetime
 
-from trees_api.galaxy_client import GalaxyClient, count_tool_steps_from_workflow
+from trees_api.galaxy_client import GalaxyClient
 from trees_api.supabase_client import SupabaseClient
 
 logger = logging.getLogger("uvicorn")
@@ -88,70 +88,44 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
                     workflow_finished = True
                     logger.debug(f"Workflow {supabase_inv.invocation_id} finished: workflow state is {galaxy_status}")
                 
-                # Second check: Verify we have ALL expected jobs before marking as finished
+                # Second check: Check if ALL jobs are in terminal state
+                # For collection workflows, job count = num_files × num_tool_steps
+                # So we can't compare against expected_job_count from workflow file
                 elif galaxy_inv.get('jobs'):
-                    # Get workflow definition to count expected tool steps
-                    try:
-                        workflow_name = supabase_inv.workflow_name
-                        workflow_file = galaxy_client.workflows_path / f"{workflow_name}.ga"
-                        
-                        expected_job_count = 0
-                        if workflow_file.exists():
-                            with open(workflow_file, 'r') as f:
-                                workflow_data = json.load(f)
-                                expected_job_count = count_tool_steps_from_workflow(workflow_data)
-                        else:
-                            logger.warning(f"Workflow file not found: {workflow_file}")
-                            # Fallback: count workflow steps with job_id
-                            expected_job_count = len([s for s in galaxy_inv.get('steps', []) 
-                                                     if s.get('job_id') is not None or 
-                                                        (hasattr(s, 'job_id') and s.job_id is not None)])
-                        
-                        actual_job_count = len(galaxy_inv['jobs'])
-                        
-                        # CRITICAL CHECK: Do we have all expected jobs?
-                        if expected_job_count > 0 and actual_job_count < expected_job_count:
-                            logger.warning(
-                                f"Workflow {supabase_inv.invocation_id}: Only {actual_job_count}/{expected_job_count} "
-                                f"jobs scheduled. Workflow not finished yet!"
-                            )
-                            workflow_finished = False
-                        else:
-                            # All jobs are scheduled, check if they're all finished
-                            all_jobs_finished = True
-                            all_jobs_successful = True
-                            for job in galaxy_inv['jobs']:
-                                job_state = job.get('state', '')
-                                if job_state not in ['ok', 'error', 'failed', 'cancelled']:
-                                    all_jobs_finished = False
-                                    all_jobs_successful = False
-                                    break
-                                if job_state != 'ok':
-                                    all_jobs_successful = False
-                            
-                            if all_jobs_finished:
-                                workflow_finished = True
-                                should_update_status = True
-                                # Update workflow status based on job states
-                                if all_jobs_successful:
-                                    update_data['status'] = 'ok'
-                                    stats['status_updated'] += 1
-                                    logger.info(f"Updating workflow status to 'ok' for invocation {supabase_inv.invocation_id}")
-                                else:
-                                    update_data['status'] = 'error'
-                                    stats['status_updated'] += 1
-                                    logger.info(f"Updating workflow status to 'error' for invocation {supabase_inv.invocation_id}")
-                                logger.debug(f"Workflow {supabase_inv.invocation_id} finished: all {actual_job_count} jobs completed")
-                            else:
-                                logger.debug(f"Workflow {supabase_inv.invocation_id}: {actual_job_count} jobs scheduled but not all finished")
+                    actual_job_count = len(galaxy_inv['jobs'])
                     
-                    except Exception as e:
-                        logger.error(f"Error checking job count for {supabase_inv.invocation_id}: {e}")
-                        # Fallback to old logic
-                        all_jobs_finished = all(job.get('state') in ['ok', 'error', 'failed', 'cancelled'] 
-                                               for job in galaxy_inv['jobs'])
-                        if all_jobs_finished:
-                            workflow_finished = True
+                    # Check if all jobs are in terminal state
+                    all_jobs_finished = True
+                    all_jobs_successful = True
+                    running_count = 0
+                    ok_count = 0
+                    
+                    for job in galaxy_inv['jobs']:
+                        job_state = job.get('state', '')
+                        if job_state == 'ok':
+                            ok_count += 1
+                        elif job_state in ['error', 'failed', 'cancelled']:
+                            all_jobs_successful = False
+                        else:
+                            # Job is still running/queued
+                            all_jobs_finished = False
+                            all_jobs_successful = False
+                            running_count += 1
+                    
+                    if all_jobs_finished and actual_job_count > 0:
+                        workflow_finished = True
+                        should_update_status = True
+                        # Update workflow status based on job states
+                        if all_jobs_successful:
+                            update_data['status'] = 'ok'
+                            stats['status_updated'] += 1
+                            logger.info(f"Workflow {supabase_inv.invocation_id} completed: all {actual_job_count} jobs successful")
+                        else:
+                            update_data['status'] = 'error'
+                            stats['status_updated'] += 1
+                            logger.info(f"Workflow {supabase_inv.invocation_id} completed with errors: {ok_count}/{actual_job_count} jobs successful")
+                    else:
+                        logger.debug(f"Workflow {supabase_inv.invocation_id}: {ok_count}/{actual_job_count} jobs ok, {running_count} still running")
                 
                 # Set finished_at timestamp if workflow is finished
                 if workflow_finished and not supabase_inv.finished_at:

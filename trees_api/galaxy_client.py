@@ -1179,65 +1179,54 @@ class GalaxyClient:
             logger.warning("Galaxy invocations API not available, returning empty list")
             return []
         
-        # Get invocations based on filters
+        # Get invocations with step_details=true to get all jobs (including collection/map-over jobs)
+        invocations = []
         if invocation_ids:
-            # Get specific invocations by ID (same approach as status.py)
-            invocations = []
             for inv_id in invocation_ids:
                 try:
-                    inv = self.gi.invocations.get(inv_id)
+                    inv = self.gi.gi.make_get_request(
+                        f"{self.gi.gi.url}/invocations/{inv_id}",
+                        params={"step_details": "true"}
+                    ).json()
                     if inv:
                         invocations.append(inv)
                 except Exception as e:
                     logger.warning(f"Could not get invocation {inv_id}: {e}")
-                    continue
         else:
-            # Get all invocations or filter by workflow
             try:
-                invocations = self.gi.invocations.list()
+                invocations = self.gi.invocations.get_invocations(
+                    workflow_id=workflow_id,
+                    step_details=True
+                )
             except Exception as e:
                 raise RuntimeError(f"Failed to list workflow invocations: {e}") from e
-            
-            # Filter by workflow_id if provided
-            if workflow_id:
-                invocations = [inv for inv in invocations if inv.workflow_id == workflow_id]
         
-        # Convert to dictionaries with separated fields for efficient comparison
+        # Convert to standardized format
         invocation_data = []
         for inv in invocations:
-            # Extract jobs from steps (same approach as status.py lines 203-212)
+            # Extract all jobs from steps
             jobs = []
-            for step in getattr(inv, 'steps', []):
-                # Check if step has a job_id (for tool steps)
-                if hasattr(step, 'job_id') and step.job_id:
-                    try:
-                        # Get the actual job status from Galaxy's Objects job API
-                        actual_job = self.gi.jobs.get(step.job_id)
-                        job_state = actual_job.state
-                    except Exception as e:
-                        # Fall back to step state if job API fails
-                        logger.warning(f"Could not get job {step.job_id} status: {e}")
-                        job_state = getattr(step, 'state', 'unknown')
-                    
+            for step in inv.get('steps', []):
+                for job in step.get('jobs', []):
                     jobs.append({
-                        'id': step.job_id,
-                        'state': job_state,
-                        'tool_id': getattr(step, 'tool_id', ''),
-                        'update_time': getattr(step, 'update_time', '')
+                        'id': job.get('id'),
+                        'state': job.get('state', 'unknown'),
+                        'tool_id': job.get('tool_id', ''),
+                        'update_time': job.get('update_time', '')
                     })
             
             invocation_data.append({
-                "id": inv.id,
-                "workflow_id": inv.workflow_id,
-                "state": inv.state,
-                "history_id": getattr(inv, 'history_id', None),
-                "update_time": getattr(inv, 'update_time', ''),
-                "steps": [self._serialize_step(step) for step in getattr(inv, 'steps', [])],
-                "inputs": getattr(inv, 'inputs', {}),
-                "outputs": getattr(inv, 'outputs', {}),
-                "output_collections": getattr(inv, 'output_collections', {}),
+                "id": inv.get('id'),
+                "workflow_id": inv.get('workflow_id'),
+                "state": inv.get('state'),
+                "history_id": inv.get('history_id'),
+                "update_time": inv.get('update_time', ''),
+                "steps": inv.get('steps', []),
+                "inputs": inv.get('inputs', {}),
+                "outputs": inv.get('outputs', {}),
+                "output_collections": inv.get('output_collections', {}),
                 "jobs": jobs,
-                "messages": getattr(inv, 'messages', [])
+                "messages": inv.get('messages', [])
             })
         
         logger.info(f"Retrieved {len(invocation_data)} workflow invocations")

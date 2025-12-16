@@ -322,7 +322,7 @@ class SupabaseClient:
             "workflow_name": workflow_name,
             "status": "new",  # Galaxy state for newly created invocations
             "started_at": datetime.now().isoformat(),
-            "inputs": [],  # Initialize as empty list
+            "inputs": {},  # Galaxy returns inputs as dict with step indices as keys
             "steps": [],   # Initialize as empty list
             "outputs": {}, # Initialize as empty dict
             "output_collections": {}, # Initialize as empty dict
