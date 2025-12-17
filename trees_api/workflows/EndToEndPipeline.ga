@@ -419,7 +419,7 @@
             "workflow_outputs": []
         },
         "13": {
-            "annotation": "Convert segmented point cloud to 3D Tiles format (parallel with export)",
+            "annotation": "Convert segmented collection to single merged 3D Tiles tileset",
             "content_id": "3dtrees_py3dtiles",
             "errors": null,
             "id": 13,
@@ -453,19 +453,19 @@
             "post_job_actions": {},
             "tool_id": "3dtrees_py3dtiles",
             "tool_state": "{\"extra_fields\": \"PredInstance\", \"input\": {\"__class__\": \"ConnectedValue\"}, \"overwrite\": false, \"srs_out\": \"4978\"}",
-            "tool_version": "1.0.4",
+            "tool_version": "2.0.0",
             "type": "tool",
             "uuid": "7459499b-6b48-4204-a3cb-261fb1b5b327",
             "when": null,
             "workflow_outputs": []
         },
         "14": {
-            "annotation": "Export tileset.json collection to S3",
+            "annotation": "Export tileset.json to S3 3dtiles/",
             "content_id": "export_remote",
             "errors": null,
             "id": 14,
             "input_connections": {
-                "export_type|incollection": {
+                "export_type|infiles": {
                     "id": 13,
                     "output_name": "tileset_json"
                 }
@@ -485,7 +485,7 @@
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/3dtiles/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "121e5880-d693-4cf5-8a75-489cca8389ea",
@@ -493,12 +493,12 @@
             "workflow_outputs": []
         },
         "15": {
-            "annotation": "Export preview.pnts collection to S3",
+            "annotation": "Export preview.pnts to S3 3dtiles/",
             "content_id": "export_remote",
             "errors": null,
             "id": 15,
             "input_connections": {
-                "export_type|incollection": {
+                "export_type|infiles": {
                     "id": 13,
                     "output_name": "preview_pnts"
                 }
@@ -518,7 +518,7 @@
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/3dtiles/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "0e934e30-2b67-49cf-9ddd-360079a97668",
@@ -526,7 +526,7 @@
             "workflow_outputs": []
         },
         "16": {
-            "annotation": "Export points tiles to S3 points/ subdirectory",
+            "annotation": "Export points tiles to S3 3dtiles/points/ subdirectory",
             "content_id": "export_remote",
             "errors": null,
             "id": 16,
@@ -551,7 +551,7 @@
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/points/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/3dtiles/points/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "89e25afa-63e6-419c-8f2a-f1196e501a0c",

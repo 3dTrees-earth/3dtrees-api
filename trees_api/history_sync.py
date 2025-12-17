@@ -84,8 +84,11 @@ def build_outputs_structure(
     
     For collection workflows (EndToEndPipeline):
     - s3_base_path = {dataset_id}/
-    - Galaxy's collection export appends element identifier (item_id)
-    - Final path: {s3_base_path}{product_type}/{item_id}/{filename}
+    - Most outputs: Galaxy's collection export appends element identifier (item_id)
+      - Final path: {s3_base_path}{product_type}/{item_id}/{filename}
+    - 3dtiles outputs: CONSOLIDATED per dataset (no item_id)
+      - Final path: {s3_base_path}3dtiles/{filename}
+      - All items are merged into a single 3D Tiles tileset
     
     Args:
         workflow_name: Name of the workflow
@@ -97,20 +100,31 @@ def build_outputs_structure(
     """
     expected = EXPECTED_OUTPUTS.get(workflow_name, {})
     
+    # Product types that are consolidated per dataset (not per item)
+    CONSOLIDATED_PRODUCTS = {"3dtiles"}
+    
     outputs = {}
     
     # Collection workflow with item_ids
     if item_ids:
         for product_type, files in expected.items():
-            product_outputs = {}
-            for item_id in item_ids:
-                item_outputs = []
+            if product_type in CONSOLIDATED_PRODUCTS:
+                # Consolidated outputs: single output per dataset (no item_id in path)
+                product_outputs = []
                 for filename in files:
-                    # Collection path: s3_base_path + product_type + item_id + filename
-                    full_path = f"{s3_base_path}{product_type}/{item_id}/{filename}"
-                    item_outputs.append(full_path)
-                product_outputs[str(item_id)] = item_outputs
-            outputs[product_type] = product_outputs
+                    full_path = f"{s3_base_path}{product_type}/{filename}"
+                    product_outputs.append(full_path)
+                outputs[product_type] = product_outputs
+            else:
+                # Per-item outputs: Collection path with item_id
+                product_outputs = {}
+                for item_id in item_ids:
+                    item_outputs = []
+                    for filename in files:
+                        full_path = f"{s3_base_path}{product_type}/{item_id}/{filename}"
+                        item_outputs.append(full_path)
+                    product_outputs[str(item_id)] = item_outputs
+                outputs[product_type] = product_outputs
     else:
         # Legacy single-file workflow (backwards compatibility)
         for product_type, files in expected.items():

@@ -165,6 +165,143 @@ def _find_existing_dataset(supabase_client: SupabaseClient, bucket_path: str) ->
 
 
 @pytest.fixture(scope="session")
+def test_collection_dataset(storage_client: StorageClient, supabase_client: SupabaseClient) -> Dataset:
+    """
+    Fixture that creates a dataset with multiple LAZ files (simulating segmented tiles).
+    
+    Uses multi-file test data (multiple LAZ tiles).
+    Creates multiple dataset_items under a single dataset - exactly what Py3DTiles expects.
+    """
+    # Test files - use the multi-file test data from tests/test_data/multi-file/
+    test_data_dir = Path(__file__).parent / "test_data" / "multi-file"
+    test_files = [
+        ("LAS/collection_test/tile_1.laz", test_data_dir / "tile_1.laz"),
+        ("LAS/collection_test/tile_2.laz", test_data_dir / "tile_2.laz"),
+    ]
+    
+    raw_bucket = storage_client.bucket_name_raw
+    
+    # Upload all test files
+    for s3_key, local_path in test_files:
+        if not local_path.exists():
+            raise FileNotFoundError(f"Test file not found: {local_path}")
+        
+        if not _file_exists_in_storage(storage_client, s3_key, raw_bucket):
+            logger.info(f"Uploading test file to RAW bucket ({raw_bucket}): {s3_key}")
+            storage_client.upload_file(local_path, s3_key, bucket=raw_bucket)
+            logger.info(f"✅ File uploaded to RAW bucket: {s3_key}")
+        else:
+            logger.info(f"✅ File already exists in RAW bucket: {s3_key}")
+    
+    # Check if dataset already exists
+    # For simplicity, we'll look for a dataset with title "Test Collection"
+    try:
+        response = supabase_client.client.table("datasets").select("*").eq("title", "Test Collection (Py3DTiles)").limit(1).execute()
+        if response.data:
+            existing_dataset = Dataset(**response.data[0])
+            logger.info(f"✅ Dataset already exists in Supabase: {existing_dataset.id}")
+            
+            # Verify it has the expected number of items
+            items_resp = supabase_client.client.table("dataset_items").select("id").eq("dataset_id", existing_dataset.id).execute()
+            if len(items_resp.data) >= 2:
+                logger.info(f"✅ Dataset has {len(items_resp.data)} items")
+                return existing_dataset
+            else:
+                logger.warning(f"Dataset has only {len(items_resp.data)} items, creating new items...")
+    except Exception as e:
+        logger.debug(f"Error checking for existing dataset: {e}")
+    
+    # Check if user is authenticated
+    current_user = supabase_client.get_current_user()
+    if not current_user:
+        logger.error("No authenticated user - cannot create dataset")
+        raise RuntimeError("No authenticated user - cannot create dataset")
+    
+    # Create new dataset with first file
+    # create_dataset() creates one dataset_item automatically
+    first_s3_key, first_local_path = test_files[0]
+    logger.info("Creating new multi-file dataset in Supabase...")
+    dataset = supabase_client.create_dataset(
+        bucket_path=first_s3_key,  # First file's path
+        acquisition_date=datetime.now(),
+        title="Test Collection (Py3DTiles)",
+        file_name=first_local_path.name,
+        visibility="public"
+    )
+    logger.info(f"✅ Dataset created in Supabase: {dataset.id}")
+    
+    # Create dataset_items for remaining files (first already created by create_dataset)
+    # dataset_items table has: id, bucket_path, file_name, dataset_id
+    for s3_key, local_path in test_files[1:]:  # Skip first file
+        try:
+            item_resp = supabase_client.client.table("dataset_items").insert({
+                "dataset_id": dataset.id,
+                "bucket_path": s3_key,
+                "file_name": local_path.name
+            }).execute()
+            logger.info(f"✅ Created dataset_item: {item_resp.data[0]['id']} for {s3_key}")
+        except Exception as e:
+            logger.warning(f"Failed to create dataset_item for {s3_key}: {e}")
+    
+    return dataset
+
+
+@pytest.fixture(scope="session")
+def test_single_file_dataset(storage_client: StorageClient, supabase_client: SupabaseClient) -> Dataset:
+    """
+    Fixture that creates a dataset with a single LAZ file.
+    
+    Uses mikro.laz as test file - a small point cloud for fast testing.
+    Creates a single dataset_item - tests single-file Py3DTiles conversion.
+    """
+    # Use mikro.laz from test_data
+    test_file_path = Path(__file__).parent / "test_data" / "mikro.laz"
+    s3_key = "LAS/single_file_test/mikro.laz"
+    
+    if not test_file_path.exists():
+        raise FileNotFoundError(f"Test file not found: {test_file_path}")
+    
+    raw_bucket = storage_client.bucket_name_raw
+    
+    # Upload test file
+    if not _file_exists_in_storage(storage_client, s3_key, raw_bucket):
+        logger.info(f"Uploading test file to RAW bucket ({raw_bucket}): {s3_key}")
+        storage_client.upload_file(test_file_path, s3_key, bucket=raw_bucket)
+        logger.info(f"✅ File uploaded to RAW bucket: {s3_key}")
+    else:
+        logger.info(f"✅ File already exists in RAW bucket: {s3_key}")
+    
+    # Check if dataset already exists
+    try:
+        response = supabase_client.client.table("datasets").select("*").eq("title", "Test Single File (Py3DTiles)").limit(1).execute()
+        if response.data:
+            existing_dataset = Dataset(**response.data[0])
+            logger.info(f"✅ Single-file dataset already exists in Supabase: {existing_dataset.id}")
+            return existing_dataset
+    except Exception as e:
+        logger.debug(f"Error checking for existing dataset: {e}")
+    
+    # Check if user is authenticated
+    current_user = supabase_client.get_current_user()
+    if not current_user:
+        logger.error("No authenticated user - cannot create dataset")
+        raise RuntimeError("No authenticated user - cannot create dataset")
+    
+    # Create new dataset with single file
+    logger.info("Creating new single-file dataset in Supabase...")
+    dataset = supabase_client.create_dataset(
+        bucket_path=s3_key,
+        acquisition_date=datetime.now(),
+        title="Test Single File (Py3DTiles)",
+        file_name=test_file_path.name,
+        visibility="public"
+    )
+    logger.info(f"✅ Single-file dataset created in Supabase: {dataset.id}")
+    
+    return dataset
+
+
+@pytest.fixture(scope="session")
 def galaxy_client() -> Generator[GalaxyClient, None, None]:
     """
     Fixture that provides an authenticated and connected Galaxy client.
