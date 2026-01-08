@@ -143,7 +143,7 @@
             "workflow_outputs": []
         },
         "4": {
-            "annotation": "Export segmented file to S3 products bucket",
+            "annotation": "export_segmented: Export segmented file to S3 products bucket",
             "content_id": "export_remote",
             "errors": null,
             "id": 4,

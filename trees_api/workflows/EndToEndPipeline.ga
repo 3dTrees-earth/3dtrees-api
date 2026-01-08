@@ -1,6 +1,6 @@
 {
     "a_galaxy_workflow": "true",
-    "annotation": "Full pipeline workflow: Standardization → Export → Overviews → Exports → Tile → Segmentation → Merge → Export → 3DTiles → Exports",
+    "annotation": "Full pipeline workflow: Collection Check → Standardization → Export → Overviews → Exports → Tile → Segmentation → Merge → Export → 3DTiles → Exports",
     "comments": [],
     "creator": [
         {
@@ -44,10 +44,76 @@
             "workflow_outputs": []
         },
         "1": {
-            "annotation": "",
-            "content_id": "3dtrees_standardization",
+            "annotation": "Collection-level validation and consistency check",
+            "content_id": "3dtrees_collection_check",
             "errors": null,
             "id": 1,
+            "input_connections": {
+                "input": {
+                    "id": 0,
+                    "output_name": "output"
+                }
+            },
+            "inputs": [],
+            "label": "3DTrees Collection Check",
+            "name": "3DTrees Collection Check",
+            "outputs": [
+                {
+                    "name": "collection_summary",
+                    "type": "json"
+                }
+            ],
+            "position": {
+                "left": 280,
+                "top": 50
+            },
+            "post_job_actions": {},
+            "tool_id": "3dtrees_collection_check",
+            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}}",
+            "tool_version": "1.1.0+galaxy0",
+            "type": "tool",
+            "uuid": "31b0770d-0c2c-4045-901c-5ad8fb20c594",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "2": {
+            "annotation": "export_collection_summary: Export collection summary JSON to S3",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 2,
+            "input_connections": {
+                "export_type|infiles": {
+                    "id": 1,
+                    "output_name": "collection_summary"
+                }
+            },
+            "inputs": [],
+            "label": "Export Collection Summary",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 560,
+                "top": 50
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxfiles://products-storage/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "a2821084-0481-48fe-9d48-480ca64db976",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "3": {
+            "annotation": "Standardize individual files in collection",
+            "content_id": "3dtrees_standardization",
+            "errors": null,
+            "id": 3,
             "input_connections": {
                 "input": {
                     "id": 0,
@@ -77,21 +143,21 @@
             },
             "post_job_actions": {},
             "tool_id": "3dtrees_standardization",
-            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}}",
-            "tool_version": "1.0.1",
+            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"min_density\": 10, \"removeable_attributes\": \"\"}",
+            "tool_version": "1.1.0+galaxy0",
             "type": "tool",
             "uuid": "0f1ccf3f-f26b-482e-ad85-c6dc68f0b729",
             "when": null,
             "workflow_outputs": []
         },
-        "2": {
-            "annotation": "Export standardized LAZ collection to S3 products bucket",
+        "4": {
+            "annotation": "export_standardized_laz: Export standardized LAZ collection to S3 products bucket",
             "content_id": "export_remote",
             "errors": null,
-            "id": 2,
+            "id": 4,
             "input_connections": {
                 "export_type|incollection": {
-                    "id": 1,
+                    "id": 3,
                     "output_name": "pc_standardized"
                 }
             },
@@ -117,14 +183,14 @@
             "when": null,
             "workflow_outputs": []
         },
-        "3": {
-            "annotation": "Export metadata JSON collection to S3 standard path",
+        "5": {
+            "annotation": "export_metadata_json: Export metadata JSON collection to S3 standard path",
             "content_id": "export_remote",
             "errors": null,
-            "id": 3,
+            "id": 5,
             "input_connections": {
                 "export_type|incollection": {
-                    "id": 1,
+                    "id": 3,
                     "output_name": "metadata_json"
                 }
             },
@@ -150,14 +216,14 @@
             "when": null,
             "workflow_outputs": []
         },
-        "4": {
-            "annotation": "Export convex hull GeoJSON collection to S3 standard path",
+        "6": {
+            "annotation": "export_convex_hull: Export convex hull GeoJSON collection to S3 standard path",
             "content_id": "export_remote",
             "errors": null,
-            "id": 4,
+            "id": 6,
             "input_connections": {
                 "export_type|incollection": {
-                    "id": 1,
+                    "id": 3,
                     "output_name": "convex_hull"
                 }
             },
@@ -183,14 +249,14 @@
             "when": null,
             "workflow_outputs": []
         },
-        "5": {
+        "7": {
             "annotation": "",
             "content_id": "3dtrees_overviews",
             "errors": null,
-            "id": 5,
+            "id": 7,
             "input_connections": {
                 "input": {
-                    "id": 1,
+                    "id": 3,
                     "output_name": "pc_standardized"
                 }
             },
@@ -220,14 +286,14 @@
             "when": null,
             "workflow_outputs": []
         },
-        "6": {
-            "annotation": "Export top view images to S3",
+        "8": {
+            "annotation": "export_top_views: Export top view images to S3",
             "content_id": "export_remote",
             "errors": null,
-            "id": 6,
+            "id": 8,
             "input_connections": {
                 "export_type|incollection": {
-                    "id": 5,
+                    "id": 7,
                     "output_name": "top_views"
                 }
             },
@@ -253,14 +319,14 @@
             "when": null,
             "workflow_outputs": []
         },
-        "7": {
-            "annotation": "Export section view images to S3",
+        "9": {
+            "annotation": "export_section_views: Export section view images to S3",
             "content_id": "export_remote",
             "errors": null,
-            "id": 7,
+            "id": 9,
             "input_connections": {
                 "export_type|incollection": {
-                    "id": 5,
+                    "id": 7,
                     "output_name": "section_views"
                 }
             },
@@ -286,14 +352,14 @@
             "when": null,
             "workflow_outputs": []
         },
-        "9": {
+        "10": {
             "annotation": "Subsample and tile point cloud for segmentation",
             "content_id": "3dtrees_tile_merge",
             "errors": null,
-            "id": 9,
+            "id": 10,
             "input_connections": {
                 "input": {
-                    "id": 1,
+                    "id": 3,
                     "output_name": "pc_standardized"
                 }
             },
@@ -319,14 +385,14 @@
             "when": null,
             "workflow_outputs": []
         },
-        "10": {
+        "11": {
             "annotation": "Deep learning tree segmentation",
             "content_id": "3dtrees_segmentanytree",
             "errors": null,
-            "id": 10,
+            "id": 11,
             "input_connections": {
                 "input": {
-                    "id": 9,
+                    "id": 10,
                     "output_name": "output_tile"
                 }
             },
@@ -352,14 +418,14 @@
             "when": null,
             "workflow_outputs": []
         },
-        "11": {
+        "12": {
             "annotation": "Merge segmented tiles back to original resolution",
             "content_id": "3dtrees_tile_merge",
             "errors": null,
-            "id": 11,
+            "id": 12,
             "input_connections": {
                 "input": {
-                    "id": 10,
+                    "id": 11,
                     "output_name": "output"
                 }
             },
@@ -385,14 +451,14 @@
             "when": null,
             "workflow_outputs": []
         },
-        "12": {
-            "annotation": "Export segmented LAZ collection to S3 products bucket",
+        "13": {
+            "annotation": "export_segmented_laz: Export segmented LAZ collection to S3 products bucket",
             "content_id": "export_remote",
             "errors": null,
-            "id": 12,
+            "id": 13,
             "input_connections": {
                 "export_type|incollection": {
-                    "id": 11,
+                    "id": 12,
                     "output_name": "output_merge"
                 }
             },
@@ -418,14 +484,14 @@
             "when": null,
             "workflow_outputs": []
         },
-        "13": {
+        "14": {
             "annotation": "Convert segmented collection to single merged 3D Tiles tileset",
             "content_id": "3dtrees_py3dtiles",
             "errors": null,
-            "id": 13,
+            "id": 14,
             "input_connections": {
                 "input": {
-                    "id": 11,
+                    "id": 12,
                     "output_name": "output_merge"
                 }
             },
@@ -459,14 +525,14 @@
             "when": null,
             "workflow_outputs": []
         },
-        "14": {
-            "annotation": "Export tileset.json to S3 3dtiles/",
+        "15": {
+            "annotation": "export_tileset: Export tileset.json to S3 3dtiles/",
             "content_id": "export_remote",
             "errors": null,
-            "id": 14,
+            "id": 15,
             "input_connections": {
                 "export_type|infiles": {
-                    "id": 13,
+                    "id": 14,
                     "output_name": "tileset_json"
                 }
             },
@@ -492,14 +558,14 @@
             "when": null,
             "workflow_outputs": []
         },
-        "15": {
-            "annotation": "Export preview.pnts to S3 3dtiles/",
+        "16": {
+            "annotation": "export_preview: Export preview.pnts to S3 3dtiles/",
             "content_id": "export_remote",
             "errors": null,
-            "id": 15,
+            "id": 16,
             "input_connections": {
                 "export_type|infiles": {
-                    "id": 13,
+                    "id": 14,
                     "output_name": "preview_pnts"
                 }
             },
@@ -525,14 +591,14 @@
             "when": null,
             "workflow_outputs": []
         },
-        "16": {
-            "annotation": "Export points tiles to S3 3dtiles/points/ subdirectory",
+        "17": {
+            "annotation": "export_points_tiles: Export points tiles to S3 3dtiles/points/ subdirectory",
             "content_id": "export_remote",
             "errors": null,
-            "id": 16,
+            "id": 17,
             "input_connections": {
                 "export_type|incollection": {
-                    "id": 13,
+                    "id": 14,
                     "output_name": "points_tiles"
                 }
             },
@@ -566,8 +632,9 @@
         "Overviews",
         "TileMerge",
         "3DTiles",
-        "S3Export"
+        "S3Export",
+        "CollectionCheck"
     ],
     "uuid": "1c5b7e5e-834a-4c1c-95ab-520ab26c0c53",
-    "version": 6
+    "version": 7
 }

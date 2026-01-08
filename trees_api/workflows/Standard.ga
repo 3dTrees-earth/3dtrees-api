@@ -85,7 +85,7 @@
             "workflow_outputs": []
         },
         "2": {
-            "annotation": "Export standardized LAZ to S3 products bucket",
+            "annotation": "export_standardized_laz: Export standardized LAZ to S3 products bucket",
             "content_id": "export_remote",
             "errors": null,
             "id": 2,
@@ -118,7 +118,7 @@
             "workflow_outputs": []
         },
         "3": {
-            "annotation": "Export metadata JSON to S3 products bucket",
+            "annotation": "export_metadata_json: Export metadata JSON to S3 products bucket",
             "content_id": "export_remote",
             "errors": null,
             "id": 3,
@@ -151,7 +151,7 @@
             "workflow_outputs": []
         },
         "4": {
-            "annotation": "Export convex hull GeoJSON to S3 products bucket",
+            "annotation": "export_convex_hull: Export convex hull GeoJSON to S3 products bucket",
             "content_id": "export_remote",
             "errors": null,
             "id": 4,

@@ -734,8 +734,8 @@ class SupabaseClient:
         """
         Update the outputs JSONB field for a galaxy_history.
         
-        This is used by the status pooler to accumulate product outputs
-        as workflow steps complete.
+        This replaces the outputs field with the new outputs dict.
+        The caller is responsible for including all required keys.
         
         Args:
             history_id: Galaxy's history ID

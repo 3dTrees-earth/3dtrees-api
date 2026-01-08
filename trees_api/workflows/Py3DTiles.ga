@@ -79,7 +79,7 @@
             ]
         },
         "2": {
-            "annotation": "Export tileset.json to S3 3dtiles/ directory",
+            "annotation": "export_tileset: Export tileset.json to S3 3dtiles/ directory",
             "content_id": "export_remote",
             "errors": null,
             "id": 2,
@@ -107,7 +107,7 @@
             "workflow_outputs": []
         },
         "3": {
-            "annotation": "Export preview.pnts to S3 3dtiles/ directory",
+            "annotation": "export_preview: Export preview.pnts to S3 3dtiles/ directory",
             "content_id": "export_remote",
             "errors": null,
             "id": 3,
@@ -135,7 +135,7 @@
             "workflow_outputs": []
         },
         "4": {
-            "annotation": "Export points tiles collection to S3 3dtiles/points/ directory",
+            "annotation": "export_points_tiles: Export points tiles collection to S3 3dtiles/points/ directory",
             "content_id": "export_remote",
             "errors": null,
             "id": 4,

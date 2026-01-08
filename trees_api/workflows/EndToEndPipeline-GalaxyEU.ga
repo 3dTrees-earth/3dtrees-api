@@ -77,7 +77,7 @@
             "workflow_outputs": []
         },
         "2": {
-            "annotation": "Export standardized LAZ to S3 products bucket",
+            "annotation": "export_standardized_laz: Export standardized LAZ to S3 products bucket",
             "content_id": "export_remote",
             "errors": null,
             "id": 2,
@@ -151,7 +151,7 @@
             "workflow_outputs": []
         },
         "4": {
-            "annotation": "Export top view images collection to S3",
+            "annotation": "export_top_views: Export top view images collection to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 4,
@@ -184,7 +184,7 @@
             "workflow_outputs": []
         },
         "5": {
-            "annotation": "Export section view images collection to S3",
+            "annotation": "export_section_views: Export section view images collection to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 5,
@@ -217,7 +217,7 @@
             "workflow_outputs": []
         },
         "6": {
-            "annotation": "Export overview animation GIF to S3",
+            "annotation": "export_overview_gif: Export overview animation GIF to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 6,
@@ -349,7 +349,7 @@
             "workflow_outputs": []
         },
         "10": {
-            "annotation": "Export segmented LAZ to S3 products bucket",
+            "annotation": "export_segmented_laz: Export segmented LAZ to S3 products bucket",
             "content_id": "export_remote",
             "errors": null,
             "id": 10,
@@ -423,7 +423,7 @@
             "workflow_outputs": []
         },
         "12": {
-            "annotation": "Export tileset.json to S3",
+            "annotation": "export_tileset: Export tileset.json to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 12,
@@ -456,7 +456,7 @@
             "workflow_outputs": []
         },
         "13": {
-            "annotation": "Export preview.pnts to S3",
+            "annotation": "export_preview: Export preview.pnts to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 13,
@@ -489,7 +489,7 @@
             "workflow_outputs": []
         },
         "14": {
-            "annotation": "Export points tiles collection to S3",
+            "annotation": "export_points_tiles: Export points tiles collection to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 14,

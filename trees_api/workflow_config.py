@@ -10,14 +10,105 @@ Key Insight:
     See: docs/issues/galaxy-dynamic-step-id-mapping.md
 """
 import re
+import json
 import logging
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Dict, Optional, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from trees_api.galaxy_client import GalaxyClient
     from trees_api.supabase_client import SupabaseClient
 
 logger = logging.getLogger("uvicorn")
+
+
+def _wkt_to_geojson(wkt_string: str) -> dict | None:
+    """
+    Convert WKT geometry to GeoJSON format using Shapely.
+    
+    Args:
+        wkt_string: WKT string (e.g., "MULTIPOLYGON (((x1 y1, x2 y2, ...)))")
+        
+    Returns:
+        GeoJSON dict or None if conversion fails
+    """
+    if not wkt_string or not isinstance(wkt_string, str):
+        return None
+    
+    try:
+        from shapely import wkt
+        from shapely.geometry import mapping
+        
+        geom = wkt.loads(wkt_string)
+        return mapping(geom)
+    except Exception as e:
+        logger.warning(f"Failed to parse WKT: {e}")
+        return None
+
+
+def _process_collection_summary(data: dict) -> dict | None:
+    """
+    Process collection_summary.json data and extract dataset-level metadata.
+    
+    Performs:
+    - Calculates total_point_count from per-file n_points
+    - Converts multipolygon_wkt to GeoJSON
+    - Extracts EPSG from first_crs
+    
+    Args:
+        data: Parsed collection_summary.json
+        
+    Returns:
+        Processed collection summary with aggregated fields
+    """
+    if not data or not isinstance(data, dict):
+        return None
+    
+    collection = data.get("collection", {})
+    files = data.get("files", {})
+    
+    # Calculate total point count from files
+    total_point_count = 0
+    for file_info in files.values():
+        if isinstance(file_info, dict):
+            n_points = file_info.get("n_points", 0)
+            if isinstance(n_points, (int, float)):
+                total_point_count += int(n_points)
+    
+    # Convert WKT to GeoJSON
+    multipolygon_wkt = collection.get("multipolygon_wkt", "")
+    convex_hull_geojson = _wkt_to_geojson(multipolygon_wkt)
+    
+    # Extract EPSG from first_crs
+    epsg = None
+    first_crs = collection.get("first_crs", {})
+    if isinstance(first_crs, dict):
+        epsg = first_crs.get("epsg")
+    # Also check crs_epsg_values (can be single value or array)
+    if epsg is None:
+        epsg_values = collection.get("crs_epsg_values")
+        if isinstance(epsg_values, (int, float)):
+            epsg = int(epsg_values)
+        elif isinstance(epsg_values, list) and len(epsg_values) > 0:
+            epsg = epsg_values[0]
+    
+    return {
+        "n_tiles": collection.get("n_tiles", len(files)),
+        "total_point_count": total_point_count,
+        "homogeneous_crs": collection.get("homogeneous_crs", False),
+        "epsg": epsg,
+        "convex_hull": convex_hull_geojson,
+        "multipolygon_wkt": multipolygon_wkt,
+        "tiles_any_overlap": collection.get("tiles_any_overlap", False),
+        "tiles_all_disjoint": collection.get("tiles_all_disjoint", True),
+        "homogeneous_attribute_names": collection.get("homogeneous_attribute_names", False),
+        "homogeneous_attribute_types": collection.get("homogeneous_attribute_types", False),
+        "all_attribute_names": collection.get("all_attribute_names", []),
+        "common_attribute_names": collection.get("common_attribute_names", []),
+        "removeable_attributes": collection.get("removeable_attributes", []),
+        "global_attribute_stats": collection.get("global_attribute_stats", []),
+        # Keep raw data for reference
+        "files": files
+    }
 
 
 def _extract_las_info(data: any, standardized: bool) -> dict | None:
@@ -70,46 +161,49 @@ def _extract_las_info(data: any, standardized: bool) -> dict | None:
 #   - Final path: {dataset_id}/{product_type}/{item_id}/
 WORKFLOW_EXPORT_ANNOTATIONS = {
     "Standard": {
-        "export standardized laz": "{s3_base_path}standard/",
-        "export metadata json": "{s3_base_path}standard/",
-        "export convex hull": "{s3_base_path}standard/"
+        "export_standardized_laz": "{s3_base_path}standard/",
+        "export_metadata_json": "{s3_base_path}standard/",
+        "export_convex_hull": "{s3_base_path}standard/"
     },
     "Segmentation": {
-        "export segmented": "{s3_base_path}segmentation/"
+        "export_segmented": "{s3_base_path}segmentation/"
     },
     "Overviews": {
-        "export top view": "{s3_base_path}overviews/",
-        "export section view": "{s3_base_path}overviews/",
-        "export.*animation|export.*gif": "{s3_base_path}overviews/"
+        "export_top_views": "{s3_base_path}overviews/",
+        "export_section_views": "{s3_base_path}overviews/",
+        "export_overview_gif": "{s3_base_path}overviews/"
     },
     "Py3DTiles": {
-        "export.*tileset": "{s3_base_path}3dtiles/",
-        "export.*preview": "{s3_base_path}3dtiles/",
-        "export.*points.*tiles|points.*subdirectory": "{s3_base_path}3dtiles/points/"
+        "export_tileset": "{s3_base_path}3dtiles/",
+        "export_preview": "{s3_base_path}3dtiles/",
+        "export_points_tiles": "{s3_base_path}3dtiles/points/"
     },
     "EndToEndPipeline": {
         # Collection workflow - Galaxy appends element identifier to paths
-        "export standardized laz": "{s3_base_path}standard/",
-        "export metadata json": "{s3_base_path}standard/",
-        "export convex hull": "{s3_base_path}standard/",
-        "export top view": "{s3_base_path}overviews/",
-        "export section view": "{s3_base_path}overviews/",
-        "export overview.*gif|export overview animation": "{s3_base_path}overviews/",
-        "export segmented laz": "{s3_base_path}segmentation/",
-        "export tileset": "{s3_base_path}3dtiles/",
-        "export preview": "{s3_base_path}3dtiles/",
-        "export points tiles": "{s3_base_path}3dtiles/points/"
+        # Collection-level outputs (single file, no element identifier)
+        "export_collection_summary": "{s3_base_path}standard/",
+        # Per-file outputs (mapped over collection)
+        "export_standardized_laz": "{s3_base_path}standard/",
+        "export_metadata_json": "{s3_base_path}standard/",
+        "export_convex_hull": "{s3_base_path}standard/",
+        "export_top_views": "{s3_base_path}overviews/",
+        "export_section_views": "{s3_base_path}overviews/",
+        "export_overview_gif": "{s3_base_path}overviews/",
+        "export_segmented_laz": "{s3_base_path}segmentation/",
+        "export_tileset": "{s3_base_path}3dtiles/",
+        "export_preview": "{s3_base_path}3dtiles/",
+        "export_points_tiles": "{s3_base_path}3dtiles/points/"
     },
     # Galaxy EU version - no metadata_json or convex_hull (not available in Galaxy EU tool version)
     "EndToEndPipeline-GalaxyEU": {
-        "export standardized laz": "{s3_base_path}standard/",
-        "export top view": "{s3_base_path}overviews/",
-        "export section view": "{s3_base_path}overviews/",
-        "export overview.*gif|export overview animation": "{s3_base_path}overviews/",
-        "export segmented laz": "{s3_base_path}segmentation/",
-        "export tileset": "{s3_base_path}3dtiles/",
-        "export preview": "{s3_base_path}3dtiles/",
-        "export points tiles": "{s3_base_path}3dtiles/points/"
+        "export_standardized_laz": "{s3_base_path}standard/",
+        "export_top_views": "{s3_base_path}overviews/",
+        "export_section_views": "{s3_base_path}overviews/",
+        "export_overview_gif": "{s3_base_path}overviews/",
+        "export_segmented_laz": "{s3_base_path}segmentation/",
+        "export_tileset": "{s3_base_path}3dtiles/",
+        "export_preview": "{s3_base_path}3dtiles/",
+        "export_points_tiles": "{s3_base_path}3dtiles/points/"
     }
 }
 
@@ -119,6 +213,23 @@ WORKFLOW_EXPORT_ANNOTATIONS = {
 # Path structure: {s3_base_path}/{product_type}/ where s3_base_path = {dataset_id}/{dataset_item_id}/
 WORKFLOW_METADATA_INGESTION = {
     "EndToEndPipeline": {
+        # Collection-level metadata (stored at dataset level)
+        "collection_summary": {
+            "metadata_files": ["collection_summary.json"],
+            "s3_path_template": "{s3_base_path}standard/",
+            "target_table": "galaxy_histories",  # Store in outputs.metadata.collection_summary
+            "field_mappings": {
+                "collection_summary.json": {
+                    # Process and aggregate collection summary
+                    "collection_summary": _process_collection_summary
+                }
+            },
+            "detection": {
+                "files": ["{s3_base_path}standard/collection_summary.json"],
+                "flag": "has_collection_summary"
+            }
+        },
+        # Per-file metadata (stored at dataset_item level)
         "standard": {
             "metadata_files": ["metadata.json", "convex_hull_wgs84.GeoJSON"],
             "s3_path_template": "{s3_base_path}standard/",

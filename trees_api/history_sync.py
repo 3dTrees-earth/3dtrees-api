@@ -149,8 +149,10 @@ def ingest_metadata_json(
     Ingest metadata JSON files from S3 into the outputs structure.
     
     For collection workflows with item_ids:
+    - Ingests collection_summary from {s3_base_path}standard/collection_summary.json
     - Ingests metadata for each item from {s3_base_path}standard/{item_id}/metadata.json
-    - Stores in outputs["metadata"][item_id]
+    - Stores collection_summary in outputs["metadata"]["collection_summary"]
+    - Stores per-item metadata in outputs["metadata"][item_id]
     
     For legacy single-file workflows:
     - Ingests from {s3_base_path}standard/metadata.json
@@ -171,9 +173,21 @@ def ingest_metadata_json(
     Returns:
         Updated outputs with metadata content
     """
+    from trees_api.workflow_config import _process_collection_summary
+    
     if item_ids:
-        # Collection workflow - ingest metadata for each item
+        # Collection workflow - first try to ingest collection_summary.json
         all_metadata = {}
+        
+        # Try to ingest collection summary (collection-level metadata)
+        collection_summary = _ingest_collection_summary(
+            storage_client, storage_config, s3_base_path
+        )
+        if collection_summary:
+            all_metadata["collection_summary"] = collection_summary
+            logger.info(f"Ingested collection_summary for {s3_base_path}")
+        
+        # Then ingest per-item metadata
         for item_id in item_ids:
             item_metadata = _ingest_single_metadata(
                 storage_client, storage_config,
@@ -184,7 +198,7 @@ def ingest_metadata_json(
         
         if all_metadata:
             outputs["metadata"] = all_metadata
-            logger.info(f"Ingested metadata for {len(all_metadata)} items")
+            logger.info(f"Ingested metadata for {len(all_metadata) - (1 if collection_summary else 0)} items")
     else:
         # Legacy single-file workflow
         metadata = _ingest_single_metadata(
@@ -195,6 +209,44 @@ def ingest_metadata_json(
             outputs["metadata"] = metadata
     
     return outputs
+
+
+def _ingest_collection_summary(
+    storage_client: StorageClient,
+    storage_config: StorageConfig,
+    s3_base_path: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Ingest collection_summary.json from S3 and process it.
+    
+    Args:
+        storage_client: Connected storage client
+        storage_config: Storage configuration
+        s3_base_path: Base S3 path (e.g., "369/")
+        
+    Returns:
+        Processed collection summary dict or None
+    """
+    from trees_api.workflow_config import _process_collection_summary
+    
+    # Galaxy exports with the label name: "collection_summary.json"
+    summary_path = f"{s3_base_path}standard/collection_summary.json"
+    try:
+        summary_data = storage_client.download_json(
+            storage_config.products_bucket,
+            summary_path
+        )
+        if summary_data:
+            # Process the raw collection summary
+            processed = _process_collection_summary(summary_data)
+            if processed:
+                return processed
+            # If processing fails, return raw data
+            return summary_data
+    except Exception as e:
+        logger.debug(f"Could not ingest {summary_path}: {e}")
+    
+    return None
 
 
 def _ingest_single_metadata(

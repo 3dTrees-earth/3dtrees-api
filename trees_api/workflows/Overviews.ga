@@ -85,7 +85,7 @@
             "workflow_outputs": []
         },
         "2": {
-            "annotation": "Export top view images collection to S3",
+            "annotation": "export_top_views: Export top view images collection to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 2,
@@ -118,7 +118,7 @@
             "workflow_outputs": []
         },
         "3": {
-            "annotation": "Export section view images collection to S3",
+            "annotation": "export_section_views: Export section view images collection to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 3,
@@ -151,7 +151,7 @@
             "workflow_outputs": []
         },
         "4": {
-            "annotation": "Export overview animation GIF to S3",
+            "annotation": "export_overview_gif: Export overview animation GIF to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 4,
