@@ -181,11 +181,11 @@ WORKFLOW_EXPORT_ANNOTATIONS = {
     "EndToEndPipeline": {
         # Collection workflow - Galaxy appends element identifier to paths
         # Collection-level outputs (single file, no element identifier)
-        "export_collection_summary": "{s3_base_path}standard/",
+        "export_collection_summary": "{s3_base_path}metadata/",
         # Per-file outputs (mapped over collection)
         "export_standardized_laz": "{s3_base_path}standard/",
-        "export_metadata_json": "{s3_base_path}standard/",
-        "export_convex_hull": "{s3_base_path}standard/",
+        "export_metadata_json": "{s3_base_path}metadata/",
+        "export_convex_hull": "{s3_base_path}metadata/",
         "export_top_views": "{s3_base_path}overviews/",
         "export_section_views": "{s3_base_path}overviews/",
         "export_overview_gif": "{s3_base_path}overviews/",
@@ -194,12 +194,16 @@ WORKFLOW_EXPORT_ANNOTATIONS = {
         "export_preview": "{s3_base_path}3dtiles/",
         "export_points_tiles": "{s3_base_path}3dtiles/points/"
     },
-    # Galaxy EU version - no metadata_json or convex_hull (not available in Galaxy EU tool version)
+    # Galaxy EU version - same as EndToEndPipeline (full outputs available)
     "EndToEndPipeline-GalaxyEU": {
+        # Collection-level outputs (single file, no element identifier)
+        "export_collection_summary": "{s3_base_path}metadata/",
+        # Per-file outputs (mapped over collection)
         "export_standardized_laz": "{s3_base_path}standard/",
+        "export_metadata_json": "{s3_base_path}metadata/",
+        "export_convex_hull": "{s3_base_path}metadata/",
         "export_top_views": "{s3_base_path}overviews/",
         "export_section_views": "{s3_base_path}overviews/",
-        "export_overview_gif": "{s3_base_path}overviews/",
         "export_segmented_laz": "{s3_base_path}segmentation/",
         "export_tileset": "{s3_base_path}3dtiles/",
         "export_preview": "{s3_base_path}3dtiles/",
@@ -216,7 +220,7 @@ WORKFLOW_METADATA_INGESTION = {
         # Collection-level metadata (stored at dataset level)
         "collection_summary": {
             "metadata_files": ["collection_summary.json"],
-            "s3_path_template": "{s3_base_path}standard/",
+            "s3_path_template": "{s3_base_path}metadata/",
             "target_table": "galaxy_histories",  # Store in outputs.metadata.collection_summary
             "field_mappings": {
                 "collection_summary.json": {
@@ -225,30 +229,36 @@ WORKFLOW_METADATA_INGESTION = {
                 }
             },
             "detection": {
-                "files": ["{s3_base_path}standard/collection_summary.json"],
+                "files": ["{s3_base_path}metadata/collection_summary.json"],
                 "flag": "has_collection_summary"
             }
         },
         # Per-file metadata (stored at dataset_item level)
-        "standard": {
-            "metadata_files": ["metadata.json", "convex_hull_wgs84.GeoJSON"],
-            "s3_path_template": "{s3_base_path}standard/",
+        "metadata": {
+            "metadata_files": ["{item_id}.json", "{item_id}.geojson"],
+            "s3_path_template": "{s3_base_path}metadata/",
             "target_table": "standard",
             "field_mappings": {
-                "metadata.json": {
+                "{item_id}.json": {
                     # Parse JSON log and extract pre/post standardization entries
                     "las_info_raw": lambda data: _extract_las_info(data, standardized=False),
                     "las_info_standardized": lambda data: _extract_las_info(data, standardized=True),
                 },
-                "convex_hull_wgs84.GeoJSON": {
+                "{item_id}.geojson": {
                     "convex_hull": lambda data: data  # Store GeoJSON directly
                 }
             },
             "detection": {
-                "files": [
-                    "{s3_base_path}standard/standardized.laz",
-                    "{s3_base_path}standard/metadata.json"
-                ],
+                "files": ["{s3_base_path}metadata/{item_id}.json"],
+                "flag": "has_metadata"
+            }
+        },
+        "standard": {
+            "s3_path_template": "{s3_base_path}standard/",
+            "target_table": "standard",
+            "field_mappings": {},
+            "detection": {
+                "files": ["{s3_base_path}standard/{item_id}.laz"],
                 "flag": "has_standardisation"
             }
         },
@@ -304,16 +314,51 @@ WORKFLOW_METADATA_INGESTION = {
             }
         }
     },
-    # Galaxy EU version - no metadata files from standardization (tool version lacks those outputs)
+    # Galaxy EU version - same outputs as EndToEndPipeline
     "EndToEndPipeline-GalaxyEU": {
+        # Collection-level metadata (stored at dataset level)
+        "collection_summary": {
+            "metadata_files": ["collection_summary.json"],
+            "s3_path_template": "{s3_base_path}metadata/",
+            "target_table": "galaxy_histories",
+            "field_mappings": {
+                "collection_summary.json": {
+                    "collection_summary": _process_collection_summary
+                }
+            },
+            "detection": {
+                "files": ["{s3_base_path}metadata/collection_summary.json"],
+                "flag": "has_collection_summary"
+            }
+        },
+        # Per-file metadata (stored at dataset_item level)
+        # Note: metadata.json and convex_hull.geojson use element identifier as filename
+        "metadata": {
+            "metadata_files": ["{item_id}.json", "{item_id}.geojson"],
+            "s3_path_template": "{s3_base_path}metadata/",
+            "target_table": "standard",
+            "field_mappings": {
+                "{item_id}.json": {
+                    "las_info_raw": lambda data: _extract_las_info(data, standardized=False),
+                    "las_info_standardized": lambda data: _extract_las_info(data, standardized=True),
+                },
+                "{item_id}.geojson": {
+                    "convex_hull": lambda data: data
+                }
+            },
+            "detection": {
+                # Uses element identifier pattern: {item_id}.json
+                "files": ["{s3_base_path}metadata/{item_id}.json"],
+                "flag": "has_metadata"
+            }
+        },
         "standard": {
-            "metadata_files": [],  # Galaxy EU tool doesn't produce metadata.json or convex_hull
             "s3_path_template": "{s3_base_path}standard/",
             "target_table": "standard",
             "field_mappings": {},
             "detection": {
-                # Galaxy export names file after dataset name: "Standardized Point Cloud.laz"
-                "files": ["{s3_base_path}standard/Standardized Point Cloud.laz"],
+                # Uses element identifier pattern: {item_id}.laz
+                "files": ["{s3_base_path}standard/{item_id}.laz"],
                 "flag": "has_standardisation"
             }
         },
@@ -322,7 +367,7 @@ WORKFLOW_METADATA_INGESTION = {
             "target_table": "overviews",
             "url_template": "{storage_endpoint}/{bucket_name}/{s3_base_path}overviews/",
             "detection": {
-                # Galaxy export adds extra extension: top_view_00.png.png
+                # Note: Galaxy export adds extra extension: top_view_00.png.png
                 "files": ["{s3_base_path}overviews/top_view_00.png.png"],
                 "flag": "has_overviews"
             }
@@ -330,10 +375,10 @@ WORKFLOW_METADATA_INGESTION = {
         "segmentation": {
             "s3_path_template": "{s3_base_path}segmentation/",
             "target_table": "segmentations",
-            # Galaxy export names file after dataset name: "Merged Point Cloud.laz"
-            "url_template": "{storage_endpoint}/{bucket_name}/{s3_base_path}segmentation/Merged Point Cloud.laz",
+            "url_template": "{storage_endpoint}/{bucket_name}/{s3_base_path}segmentation/{item_id}.laz",
             "detection": {
-                "files": ["{s3_base_path}segmentation/Merged Point Cloud.laz"],
+                # Uses element identifier pattern: {item_id}.laz
+                "files": ["{s3_base_path}segmentation/{item_id}.laz"],
                 "flag": "has_segmentation"
             }
         },

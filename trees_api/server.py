@@ -85,7 +85,7 @@ app = FastAPI(title="3DTrees API", description="API for 3DTrees", lifespan=lifes
 # CORS configuration for local development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "https://3dtrees.earth"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],

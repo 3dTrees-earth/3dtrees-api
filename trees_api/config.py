@@ -15,12 +15,13 @@ class GalaxyConfig(BaseSettings):
     """Galaxy server configuration.
     
     File Source Configuration:
-        Local Galaxy uses simple IDs: raw-storage, products-storage
-        Galaxy EU uses UUIDs: gxuserfiles://be5b90f9-ffab-44a2-a1f3-58ba87f04220/
+        Local Galaxy uses simple IDs: raw-storage, products-storage, visualization-storage
+        Galaxy EU uses UUIDs: gxuserfiles://<uuid>/
         
         Set these environment variables for Galaxy EU:
             GALAXY_FILE_SOURCE_RAW=be5b90f9-ffab-44a2-a1f3-58ba87f04220
             GALAXY_FILE_SOURCE_PRODUCTS=e1d3f62b-2abb-4f1f-a888-e69f676980cb
+            GALAXY_FILE_SOURCE_VISUALIZATION=b3593d8c-534a-428b-bdc1-891cfc7e0547
             GALAXY_FILE_SOURCE_SCHEME=gxuserfiles
     """
     
@@ -44,6 +45,10 @@ class GalaxyConfig(BaseSettings):
     file_source_products: str = Field(
         default="products-storage",
         description="Galaxy file source ID for products bucket"
+    )
+    file_source_visualization: str = Field(
+        default="visualization-storage",
+        description="Galaxy file source ID for visualization bucket (3dtiles, overviews)"
     )
     file_source_scheme: str = Field(
         default="gxfiles",
@@ -101,16 +106,17 @@ class SupabaseConfig(BaseSettings):
 class StorageConfig(BaseSettings):
     """S3/MinIO storage configuration.
     
-    Supports separate credentials for processor (read raw, write products) 
+    Supports separate credentials for processor (read raw, write products/visualization) 
     and uploader (write raw for frontend uploads).
     
     For production, set environment variables:
         STORAGE_URL=https://s3.bwsfs.uni-freiburg.de
-        STORAGE_BUCKET_NAME_RAW=frct-3dtrees-raw-dev
-        STORAGE_BUCKET_NAME_PRODUCTS=frct-3dtrees-products-dev
+        STORAGE_BUCKET_NAME_RAW=frct-3dtrees-raw
+        STORAGE_BUCKET_NAME_PRODUCTS=frct-3dtrees-products
+        STORAGE_BUCKET_NAME_VISUALIZATION=frct-3dtrees-visualization
         STORAGE_REGION=fr1-ec82
         
-        # Processor credentials (read raw, write products)
+        # Processor credentials (read raw, write products/visualization)
         STORAGE_ACCESS_KEY_PROCESSOR=...
         STORAGE_SECRET_KEY_PROCESSOR=...
         
@@ -135,6 +141,7 @@ class StorageConfig(BaseSettings):
     bucket_name: str = Field(default="3dtrees-dev", description="Legacy single bucket name")
     bucket_name_products: str = Field(default="3dtrees-products", description="Products bucket name")
     bucket_name_raw: str = Field(default="3dtrees-raw", description="Raw data bucket name")
+    bucket_name_visualization: str = Field(default="3dtrees-visualization", description="Visualization bucket name (3dtiles, overviews - public)")
     url: str = Field(default="http://localhost:9500", description="Storage endpoint URL")
     region: str = Field(default="us-east-1", description="Storage region")
     
