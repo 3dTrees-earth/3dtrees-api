@@ -1,21 +1,27 @@
 import os
+import json
 from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
-from pathlib import Path
 import logging
-import tempfile
 
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from trees_api.config import AppConfig
 from trees_api.galaxy_client import GalaxyClient
 from trees_api.supabase_client import SupabaseClient
 from trees_api.storage_client import StorageClient
-from trees_api.connection_manager import connection_manager
+from trees_api.connection_manager import ConnectionManager
+from trees_api.upload_router import router as upload_router
+from trees_api.workflow_config import build_workflow_parameters
 
 
 logger = logging.getLogger("uvicorn")
+
+# Global connection manager instance (will be initialized in lifespan)
+connection_manager: Optional[ConnectionManager] = None
 
 # Dependency injection functions using ConnectionManager
 def get_galaxy_client() -> Optional[GalaxyClient]:
@@ -34,12 +40,27 @@ def get_storage_client() -> Optional[StorageClient]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize connections on startup and cleanup on shutdown."""
+    global connection_manager
+    
     logger.info("Starting up 3DTrees API...")
+    
+    # Create and validate centralized configuration
+    try:
+        config = AppConfig()
+        config.validate()
+        logger.info("Configuration validated successfully")
+    except ValueError as e:
+        logger.error(f"Configuration validation failed: {e}")
+        raise RuntimeError(f"Configuration error: {e}") from e
+    
+    # Initialize connection manager with config
+    connection_manager = ConnectionManager(config)
     
     # Try to initialize all clients (but don't fail if they can't connect)
     connection_manager.connect_galaxy()
     connection_manager.connect_supabase()
-    connection_manager.connect_storage()
+    connection_manager.connect_storage()  # Processor storage (read raw, write products)
+    connection_manager.connect_uploader_storage()  # Uploader storage (write raw)
     
     # Start background retry task
     retry_task = await connection_manager.start_retry_task(interval=60)
@@ -61,6 +82,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="3DTrees API", description="API for 3DTrees", lifespan=lifespan)
 
+# CORS configuration for local development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "https://3dtrees.earth"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+
+# Register routers
+app.include_router(upload_router)
+
 # Pydantic models for request/response
 class JobCreateRequest(BaseModel):
     dataset_id: str
@@ -68,6 +101,81 @@ class JobCreateRequest(BaseModel):
     overwrite: bool = False
     parameters: Dict[str, Any] = {}
 
+
+def _invoke_workflow_with_collection(
+    galaxy: GalaxyClient,
+    supabase: SupabaseClient,
+    workflow_name: str,
+    dataset_id: int,
+    history_name: str,
+    workflow_parameters: Dict[int, Dict[str, str]],
+    user_parameters: dict,
+    history_id: Optional[str] = None,
+    history_fk: Optional[int] = None
+):
+    """
+    Invoke Galaxy workflow with collection input (all dataset_items).
+    
+    Galaxy will fetch files directly from S3 during job execution via
+    deferred file-source URIs. No pre-import needed.
+    
+    Args:
+        galaxy: Connected Galaxy client
+        supabase: Connected Supabase client
+        workflow_name: Name of the workflow to invoke
+        dataset_id: ID of the dataset (parent of dataset_items)
+        history_name: Name of the Galaxy history (for new history creation)
+        workflow_parameters: Workflow step parameters (with integer keys)
+        user_parameters: User-defined parameters to store
+        history_id: Optional existing Galaxy history ID to reuse
+        history_fk: Optional ID of the galaxy_histories record to link
+        
+    Returns:
+        WorkflowInvocation object from Supabase
+        
+    Raises:
+        HTTPException: If workflow invocation or recording fails
+    """
+    try:
+        logger.info(f"Invoking workflow '{workflow_name}' with collection for dataset_id={dataset_id} (history_id={history_id})")
+        invocation_result = galaxy.invoke_workflow_with_collection(
+            workflow_name=workflow_name,
+            dataset_id=dataset_id,
+            supabase_client=supabase,
+            history_name=history_name if not history_id else None,
+            history_id=history_id,
+            parameters=workflow_parameters if workflow_parameters else None
+        )
+        logger.info(f"Workflow invoked successfully: {invocation_result['invocation_id']}")
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invoking workflow {workflow_name} with collection failed: {e}"
+        ) from e
+    
+    # Record workflow invocation in Supabase
+    try:
+        workflow_invocation = supabase.create_workflow_invocation(
+            workflow_uuid=invocation_result["invocation_id"],
+            dataset_id=dataset_id,
+            workflow_name=workflow_name,
+            history_fk=history_fk
+        )
+        
+        # Store user parameters if provided
+        if user_parameters:
+            supabase.update_workflow_invocation(
+                workflow_invocation.invocation_id,
+                parameters=user_parameters
+            )
+        
+        return workflow_invocation
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Creating workflow invocation in Supabase failed: {e}"
+        ) from e
 
 
 @app.get("/")
@@ -112,61 +220,102 @@ def create_job(
     supabase: Optional[SupabaseClient] = Depends(get_supabase_client),
     storage: Optional[StorageClient] = Depends(get_storage_client)
 ):
+    """
+    Create a new workflow job for a dataset.
+    
+    Uses collection-based workflow invocation - Galaxy fetches all files from S3
+    as part of workflow execution via deferred file-source URIs. Each dataset_item
+    is processed as a collection element, with Galaxy's map-over handling per-item
+    processing through the tools.
+    """
     # Check if all required clients are available
     if not galaxy:
         raise HTTPException(status_code=503, detail="Galaxy service is unavailable. Please check /health for details.")
     if not supabase:
         raise HTTPException(status_code=503, detail="Supabase service is unavailable. Please check /health for details.")
+    # Storage client is optional - Galaxy accesses S3 directly via file sources
     if not storage:
-        raise HTTPException(status_code=503, detail="Storage service is unavailable. Please check /health for details.")
-    workflow_name = workflow_name.capitalize()
-    history_name = f"{workflow_name} - {dataset_id}"
-    # make sure the requested workflow exists in galaxy
-    try:
-        workflow = galaxy.ensure_workflow_available(workflow_name)
-        history = galaxy.create_history(history_name)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Loading Workflow {workflow_name} and history failed: {e} ")
+        logger.warning("Storage service is unavailable - this is OK since Galaxy accesses S3 directly via file sources")
     
-    # development implementation: first download the dataset from s3
-    try:
-        database_dataset = supabase.get_dataset(dataset_id)
-        with tempfile.NamedTemporaryFile(suffix=".laz") as temp_file:
-            storage.download_file(database_dataset.bucket_path, temp_file.name)
-            dataset = galaxy.upload_file(history, Path(temp_file.name))
-            galaxy.wait_for_upload(dataset)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Downloading dataset {dataset_id} failed: {e} ")
+    dataset_id_int = int(dataset_id)
     
-    # now invoke the workflow
+    # Verify dataset exists and get first item_id for s3_base_path
     try:
-        invocation_result = galaxy.invoke_workflow_with_dataset(
-            workflow_name=workflow_name,
-            dataset_id=dataset.id,
-            history_name=history_name
-        )
-        print(invocation_result)
+        response = supabase.client.table("dataset_items").select("id").eq("dataset_id", dataset_id_int).order("id").limit(1).execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail=f"No dataset_items found for dataset {dataset_id}")
+        first_item_id = response.data[0]["id"]
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invoking workflow {workflow_name} failed: {e} ")
+        raise HTTPException(status_code=400, detail=f"Failed to get dataset items: {e}") from e
     
-    # if there are no errors invoking the workflow, create the workflow invocation in Supabase
+    logger.info(f"Creating collection workflow job for dataset_id={dataset_id_int} (first_item_id={first_item_id})")
+    
+    # Ensure workflow exists
     try:
-        workflow_invocation = supabase.create_workflow_invocation(
-            workflow_uuid=invocation_result["invocation_id"],
-            dataset_id=dataset_id,
-            workflow_name=workflow_name
-        )
-        
-        # Store the parameters in the parameters field
-        if parameters:
-            supabase.update_workflow_invocation(
-                workflow_invocation.invocation_id,
-                parameters=parameters
+        galaxy.ensure_workflow_available(workflow_name)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Loading Workflow {workflow_name} failed: {e}")
+    
+    # Get or create Galaxy history for this dataset
+    history_name = f"{workflow_name} - Dataset {dataset_id}"
+    
+    # Check if galaxy_history already exists for this dataset
+    existing_history = supabase.get_galaxy_history_by_dataset(dataset_id_int)
+    
+    if existing_history:
+        # Reuse existing history
+        galaxy_history_id = existing_history["history_id"]
+        galaxy_history_fk = existing_history["id"]
+        s3_base_path = existing_history.get("s3_base_path", f"{dataset_id}/")
+        logger.info(f"Reusing existing Galaxy history {galaxy_history_id} for dataset {dataset_id}")
+    else:
+        # Create new Galaxy history
+        try:
+            new_history = galaxy.create_history(name=history_name)
+            galaxy_history_id = new_history.id
+            
+            # S3 base path uses dataset_id/ for collection-based workflow
+            s3_base_path = f"{dataset_id}/"
+            history_record = supabase.get_or_create_galaxy_history(
+                dataset_id=dataset_id_int,
+                history_id=galaxy_history_id,
+                history_name=history_name,
+                s3_base_path=s3_base_path
             )
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Creating workflow invocation in Supabase failed: {e} ")
+            galaxy_history_fk = history_record["id"]
+            logger.info(f"Created new Galaxy history {galaxy_history_id} for dataset {dataset_id}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to create Galaxy history: {e}")
+    
+    # Prepare workflow parameters (export paths, etc.)
+    workflow_parameters = build_workflow_parameters(
+        galaxy_client=galaxy,
+        supabase_client=supabase,
+        workflow_name=workflow_name,
+        dataset_id=dataset_id_int,
+        s3_base_path=s3_base_path
+    )
+    
+    # Invoke workflow with collection input - Galaxy fetches during execution
+    return _invoke_workflow_with_collection(
+        galaxy=galaxy,
+        supabase=supabase,
+        workflow_name=workflow_name,
+        dataset_id=dataset_id_int,
+        history_name=history_name,
+        workflow_parameters=workflow_parameters,
+        user_parameters=parameters,
+        history_id=galaxy_history_id,
+        history_fk=galaxy_history_fk
+    )
 
-    return workflow_invocation
+
+    # OLD CODE REMOVED - 176 lines replaced with build_workflow_parameters() call above
+    # See commit history for old if-elif workflow parameter building code
+    # Key improvement: Dynamic step ID resolution fixes hardcoded step ID bug
+
 
 @app.get("/jobs")
 def list_jobs(
@@ -220,7 +369,6 @@ class APIServerSettings(BaseSettings):
         case_sensitive=False,
         cli_parse_args=True,
         cli_ignore_unknown_args=True,
-        env_file=".env",
         env_prefix="API_SERVER_",
     )
 

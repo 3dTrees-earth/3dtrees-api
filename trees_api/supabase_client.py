@@ -5,41 +5,34 @@ from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 
 from trees_api.models import Dataset, WorkflowInvocation
+from trees_api.config import SupabaseConfig
 
 logger = logging.getLogger("uvicorn")
 
 
-class SupabaseClient(BaseSettings):
-    """Supabase client for 3DTrees API with Pydantic settings configuration."""
+class SupabaseClient:
+    """Supabase client for 3DTrees API."""
     
-    url: str = Field(default="", description="Supabase project URL")
-    key: str = Field(default="", description="Supabase anon/public key")
-    service_key: Optional[str] = Field(default=None, description="Supabase service role key (for admin operations)")
-    
-    # Supabase user credentials (separate from Galaxy credentials)
-    email: Optional[str] = Field(default="processor@3dtrees.earth", description="Supabase user email")
-    password: Optional[str] = Field(default=None, description="Supabase user password")
-    
-    # optional settings to overwrite table names
-    datasets_table: str = Field(default="datasets", description="Supabase datasets table name")
-    invocations_table: str = Field(default="galaxy_workflow_invocations", description="Supabase workflow invocations table name")
-
-    # Client instance
-    client: Optional[Client] = Field(default=None, init=False)
-    
-    model_config = SettingsConfigDict(
-        case_sensitive=False,
-        cli_parse_args=True,
-        cli_ignore_unknown_args=True,
-        env_file=".env",
-        env_prefix="SUPABASE_",
-    )
+    def __init__(self, config: SupabaseConfig):
+        """
+        Initialize Supabase client with configuration.
+        
+        Args:
+            config: SupabaseConfig instance with connection details
+        """
+        self.url = config.url
+        self.key = config.key
+        self.service_key = config.service_key
+        self.email = config.email
+        self.password = config.password
+        self.datasets_table = config.datasets_table
+        self.invocations_table = config.invocations_table
+        
+        self.client: Optional[Client] = None
     
     def connect(self) -> bool:
         if not self.url or not self.key:
@@ -48,19 +41,10 @@ class SupabaseClient(BaseSettings):
         try:
             logger.debug(f"Connecting to Supabase at {self.url}...")
             
-            # Create client options
-            options = ClientOptions(
-                schema="public",
-                headers={
-                    "X-Client-Info": "3dtrees-api/0.1.0"
-                }
-            )
-            
-            # Create Supabase client
+            # Create Supabase client (simplified - newer supabase-py doesn't require ClientOptions)
             self.client = create_client(
                 supabase_url=self.url,
-                supabase_key=self.key,
-                options=options
+                supabase_key=self.key
             )
             
             # Test connection by getting user info (if authenticated)
@@ -195,6 +179,31 @@ class SupabaseClient(BaseSettings):
             # Wrap unexpected exceptions with context
             raise RuntimeError(f"Sign out failed: {e}") from e
 
+    def get_dataset_item(self, dataset_item_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get a dataset_item by ID.
+        
+        Args:
+            dataset_item_id: ID of the dataset_item to retrieve
+            
+        Returns:
+            Dictionary with dataset_item data including id, bucket_path, file_name, dataset_id
+            
+        Raises:
+            RuntimeError: If not connected to Supabase
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            response = self.client.table("dataset_items").select("*").eq("id", dataset_item_id).execute()
+            if response.data:
+                return response.data[0]
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get dataset_item {dataset_item_id}: {e}")
+            return None
+
     def get_dataset(self, dataset_id: Optional[int] = None, uuid: Optional[str] = None) -> Dataset:
         if not self.client:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
@@ -202,14 +211,31 @@ class SupabaseClient(BaseSettings):
         if dataset_id is None and uuid is None:
             raise ValueError("Either dataset_id or uuid must be provided")
         
-        query = self.client.table(self.datasets_table).select("*")
+        # Get dataset with first dataset_item (for single-file datasets)
+        query = self.client.table("datasets").select("*, dataset_items:dataset_items(*)")
         if dataset_id is not None:
             query = query.eq("id", dataset_id)
         else:
             query = query.eq("uuid", uuid)
         
         response = query.execute()
-        return Dataset.model_validate(response.data[0])
+        dataset_data = response.data[0]
+        
+        # Extract bucket_path and file_name from first dataset_item
+        dataset_items = dataset_data.get("dataset_items", [])
+        bucket_path = dataset_items[0].get("bucket_path", "") if dataset_items else ""
+        file_name = dataset_items[0].get("file_name") if dataset_items else None
+        
+        # Create Dataset object with bucket_path and file_name from dataset_item
+        dataset_dict = {
+            **dataset_data,
+            "bucket_path": bucket_path,
+            "file_name": file_name,
+        }
+        # Remove dataset_items from the dict since it's not part of Dataset model
+        dataset_dict.pop("dataset_items", None)
+        
+        return Dataset.model_validate(dataset_dict)
 
     def get_datasets(self, user_id: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[Dataset]:
         if not self.client:
@@ -240,42 +266,76 @@ class SupabaseClient(BaseSettings):
             else:
                 raise RuntimeError(f"Failed to get datasets: {e}") from e
 
-    def create_dataset(self, bucket_path: str,acquisition_date: datetime, title: str = None, file_name: str = None, visibility: str = None) -> Dataset:
+    def create_dataset(self, bucket_path: str, acquisition_date: datetime, title: str = None, file_name: str = None, visibility: str = None) -> Dataset:
+        """Legacy method: Creates dataset and dataset_item. Note: bucket_path and file_name are now in dataset_items."""
         if not self.client:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
         
         user_id = self.get_current_user()["user"].id
 
-        response = self.client.table(self.datasets_table).insert({
+        # Create parent dataset record
+        dataset_response = self.client.table(self.datasets_table).insert({
             "uuid": str(uuid4()),
             "user_id": user_id,
-            "bucket_path": bucket_path,
             "acquisition_date": acquisition_date.isoformat(),
-            "title": title,
-            "file_name": file_name,
-            "visibility": visibility
+            "title": title or "Untitled Dataset",
+            "visibility": visibility or "private"
+        }).execute()
+        
+        dataset_id = dataset_response.data[0]["id"]
+        
+        # Create dataset_item record
+        self.client.table("dataset_items").insert({
+            "dataset_id": dataset_id,
+            "bucket_path": bucket_path,
+            "file_name": file_name
         }).execute()
 
-        return Dataset.model_validate(response.data[0])
+        # Return Dataset object with bucket_path and file_name
+        dataset_dict = {
+            **dataset_response.data[0],
+            "bucket_path": bucket_path,
+            "file_name": file_name,
+        }
+        
+        return Dataset.model_validate(dataset_dict)
 
-    def create_workflow_invocation(self, workflow_uuid: str, dataset_id: int, workflow_name: str) -> WorkflowInvocation:
+    def create_workflow_invocation(self, workflow_uuid: str, dataset_id: int, workflow_name: str, history_fk: Optional[int] = None) -> WorkflowInvocation:
+        """
+        Create a workflow invocation record.
+        
+        Args:
+            workflow_uuid: Galaxy invocation ID
+            dataset_id: ID of the dataset (parent of dataset_items)
+            workflow_name: Name of the workflow
+            history_fk: Optional ID of the galaxy_histories record to link
+            
+        Returns:
+            WorkflowInvocation object
+        """
         if not self.client:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
         
-        response = self.client.table(self.invocations_table).insert({
+        invocation_data = {
             "dataset_id": dataset_id,
             "invocation_id": workflow_uuid,
             "workflow_name": workflow_name,
             "status": "new",  # Galaxy state for newly created invocations
             "started_at": datetime.now().isoformat(),
-            "inputs": [],  # Initialize as empty list
+            "inputs": {},  # Galaxy returns inputs as dict with step indices as keys
             "steps": [],   # Initialize as empty list
             "outputs": {}, # Initialize as empty dict
             "output_collections": {}, # Initialize as empty dict
             "jobs": [],    # Initialize as empty list
             "messages": [], # Initialize as empty list
             "parameters": {}, # Initialize as empty dict
-        }).execute()
+        }
+        
+        # Link to galaxy_history if provided
+        if history_fk is not None:
+            invocation_data["history_fk"] = history_fk
+        
+        response = self.client.table(self.invocations_table).insert(invocation_data).execute()
 
         return WorkflowInvocation.model_validate(response.data[0])
     
@@ -324,7 +384,7 @@ class SupabaseClient(BaseSettings):
         Get workflow invocations for a specific dataset_id.
         
         Args:
-            dataset_id: The dataset ID to filter by (as string)
+            dataset_id: The dataset ID to filter by
             limit: Maximum number of invocations to return
             offset: Number of invocations to skip
             
@@ -338,7 +398,16 @@ class SupabaseClient(BaseSettings):
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
         
         try:
-            response = self.client.table(self.invocations_table).select("*").eq("dataset_id", dataset_id).order("created_at", desc=True).limit(limit).offset(offset).execute()
+            # Query invocations directly by dataset_id
+            response = (
+                self.client.table(self.invocations_table)
+                .select("*")
+                .eq("dataset_id", dataset_id)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .offset(offset)
+                .execute()
+            )
             
             invocations = []
             for invocation_data in response.data:
@@ -486,3 +555,206 @@ class SupabaseClient(BaseSettings):
             
         except Exception as e:
             raise RuntimeError(f"Failed to get finished unsynced workflow invocations: {e}") from e
+    
+    def upsert_product_metadata(
+        self,
+        table: str,
+        dataset_item_id: int,
+        data: Dict[str, Any]
+    ) -> None:
+        """
+        Upsert metadata into a product table (standard, overviews, segmentations, tilesets).
+        
+        This method checks if a row exists for the given dataset_item_id and either updates
+        the existing row or inserts a new one.
+        
+        Args:
+            table: Name of the product table to update
+            dataset_item_id: ID of the dataset item
+            data: Dictionary of field values to upsert
+            
+        Raises:
+            RuntimeError: If not connected to Supabase or operation fails
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            # Check if row exists
+            existing = (
+                self.client.table(table)
+                .select("id")
+                .eq("dataset_item_id", dataset_item_id)
+                .execute()
+            )
+            
+            if existing.data:
+                # Update existing row
+                logger.debug(f"Updating existing {table} record for dataset_item_id {dataset_item_id}")
+                self.client.table(table).update(data).eq("dataset_item_id", dataset_item_id).execute()
+            else:
+                # Insert new row
+                logger.debug(f"Inserting new {table} record for dataset_item_id {dataset_item_id}")
+                data["dataset_item_id"] = dataset_item_id
+                self.client.table(table).insert(data).execute()
+            
+            logger.info(f"Successfully upserted {table} metadata for dataset_item_id {dataset_item_id}")
+        
+        except Exception as e:
+            logger.error(f"Error upserting {table} metadata for dataset_item_id {dataset_item_id}: {e}")
+            raise RuntimeError(f"Failed to upsert {table} metadata: {e}") from e
+
+    # =========================================================================
+    # Galaxy Histories CRUD
+    # =========================================================================
+    
+    def get_or_create_galaxy_history(
+        self,
+        dataset_id: int,
+        history_id: str,
+        history_name: str,
+        s3_base_path: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get existing galaxy_history for a dataset, or create a new one.
+        
+        Each dataset has exactly one galaxy_history (1:1 relationship).
+        If a history already exists for the dataset, returns it.
+        Otherwise, creates a new one with the provided Galaxy history_id.
+        
+        Args:
+            dataset_id: The dataset ID (FK to datasets table)
+            history_id: Galaxy's history ID (assigned by Galaxy)
+            history_name: Human-readable name for the history
+            s3_base_path: Base S3 path for exports (e.g., "{history_id}/")
+            
+        Returns:
+            Dictionary with galaxy_history record
+            
+        Raises:
+            RuntimeError: If not connected to Supabase or operation fails
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            # Check if history already exists for this dataset
+            existing = (
+                self.client.table("galaxy_histories")
+                .select("*")
+                .eq("dataset_id", dataset_id)
+                .execute()
+            )
+            
+            if existing.data:
+                logger.debug(f"Found existing galaxy_history for dataset {dataset_id}")
+                return existing.data[0]
+            
+            # Create new galaxy_history
+            new_history = {
+                "dataset_id": dataset_id,
+                "history_id": history_id,
+                "history_name": history_name,
+                "s3_base_path": s3_base_path or f"{history_id}/",
+                "outputs": {},
+            }
+            
+            # Insert and return the record
+            response = self.client.table("galaxy_histories").insert(new_history).execute()
+            
+            if not response.data:
+                raise RuntimeError("Failed to create galaxy_history - no data returned")
+            
+            logger.info(f"Created galaxy_history for dataset {dataset_id}: {history_name}")
+            return response.data[0]
+            
+        except Exception as e:
+            logger.error(f"Error in get_or_create_galaxy_history for dataset {dataset_id}: {e}")
+            raise RuntimeError(f"Failed to get/create galaxy_history: {e}") from e
+    
+    def get_galaxy_history_by_dataset(self, dataset_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get galaxy_history for a dataset.
+        
+        Args:
+            dataset_id: The dataset ID
+            
+        Returns:
+            Dictionary with galaxy_history record, or None if not found
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            response = (
+                self.client.table("galaxy_histories")
+                .select("*")
+                .eq("dataset_id", dataset_id)
+                .execute()
+            )
+            
+            return response.data[0] if response.data else None
+            
+        except Exception as e:
+            logger.error(f"Error getting galaxy_history for dataset {dataset_id}: {e}")
+            raise RuntimeError(f"Failed to get galaxy_history: {e}") from e
+    
+    def get_galaxy_history_by_history_id(self, history_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get galaxy_history by Galaxy's history ID.
+        
+        Args:
+            history_id: Galaxy's history ID
+            
+        Returns:
+            Dictionary with galaxy_history record, or None if not found
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            response = (
+                self.client.table("galaxy_histories")
+                .select("*")
+                .eq("history_id", history_id)
+                .execute()
+            )
+            
+            return response.data[0] if response.data else None
+            
+        except Exception as e:
+            logger.error(f"Error getting galaxy_history by history_id {history_id}: {e}")
+            raise RuntimeError(f"Failed to get galaxy_history: {e}") from e
+    
+    def update_galaxy_history_outputs(
+        self,
+        history_id: str,
+        outputs: Dict[str, Any]
+    ) -> None:
+        """
+        Update the outputs JSONB field for a galaxy_history.
+        
+        This replaces the outputs field with the new outputs dict.
+        The caller is responsible for including all required keys.
+        
+        Args:
+            history_id: Galaxy's history ID
+            outputs: Dictionary of outputs to store (replaces existing)
+            
+        Raises:
+            RuntimeError: If not connected or update fails
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            self.client.table("galaxy_histories").update({
+                "outputs": outputs,
+                "updated_at": datetime.now().isoformat()
+            }).eq("history_id", history_id).execute()
+            
+            logger.debug(f"Updated outputs for galaxy_history {history_id}")
+            
+        except Exception as e:
+            logger.error(f"Error updating galaxy_history outputs for {history_id}: {e}")
+            raise RuntimeError(f"Failed to update galaxy_history outputs: {e}") from e

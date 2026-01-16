@@ -18,15 +18,19 @@ class Dataset(BaseModel):
     visibility: Optional[str] = None
 
 class WorkflowName(StrEnum):
+    STANDARD = "Standard"
     OVERVIEW = "Overviews"
     SEGMENTATION = "Segmentation"
+    PY3DTILES = "Py3DTiles"
+    ENDTOEND = "EndToEndPipeline"
+    ENDTOEND_GALAXY_EU = "EndToEndPipeline-GalaxyEU"
 
 # WorkflowStatus enum removed - using Galaxy states directly in database
 
 class WorkflowInvocation(BaseModel):
     id: int
     invocation_id: str
-    dataset_id: int
+    dataset_id: int  # References datasets (collection-based workflow)
     workflow_name: WorkflowName
     status: str = "new"  # Galaxy state - no enum needed
     created_at: datetime
@@ -35,14 +39,19 @@ class WorkflowInvocation(BaseModel):
     
     # Separate JSONB fields for efficient comparison and updates
     steps: list = []
-    inputs: list = []
+    inputs: dict = {}  # Galaxy returns inputs as dict with step indices as keys
     outputs: dict = {}
     output_collections: dict = {}
     jobs: list = []
     messages: list = []
     parameters: dict = {}  # User-defined parameters for the workflow
+    
+    # Legacy fields (no longer used - Galaxy exports directly to S3)
     results_synced: bool = False
     results_synced_at: Optional[datetime] = None
+    
+    # Active field: set by product_sync when all products detected in S3
+    metadata_synced_at: Optional[datetime] = None
 
     def has_jobs_changed(self, other_jobs: list) -> bool:
         """Check if jobs have changed by comparing length and job states"""

@@ -24,7 +24,6 @@ class StorageClient(BaseSettings):
         case_sensitive=False,
         cli_parse_args=True,
         cli_ignore_unknown_args=True,
-        env_file=".env",
         env_prefix="STORAGE_",
     )
 

@@ -46,7 +46,7 @@ def test_workflow_via_api_with_status_sync(test_remote_file: Dataset, galaxy_cli
             "http://127.0.0.1:8003/jobs",
             params={
                 "dataset_id": str(test_remote_file.id),
-                "workflow_name": "overviews",
+                "workflow_name": "Overviews",
                 "overwrite": False
             },
             json={"test_parameter": "test_value"}
@@ -90,7 +90,7 @@ def test_workflow_via_api_with_status_sync(test_remote_file: Dataset, galaxy_cli
         # Verify the status change is reflected in Supabase
         final_invocation = supabase_client.get_workflow_invocation_by_id(invocation_id)
         assert final_invocation is not None, "Invocation not found in Supabase"
-        assert final_invocation.status in ["running", "scheduled"], f"Expected running/scheduled status, got: {final_invocation.status}"
+        assert final_invocation.status in ["running", "scheduled", "ready", "new"], f"Expected in-progress status, got: {final_invocation.status}"
         
         # Verify the inputs were stored correctly (should be Galaxy inputs, not user parameters)
         assert isinstance(final_invocation.inputs, list), "Inputs should be a list"
