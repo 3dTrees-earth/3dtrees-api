@@ -70,6 +70,31 @@ EXPECTED_OUTPUTS = {
             "preview.pnts",
             "points/"
         ]
+    },
+    # Galaxy EU version - same outputs as EndToEndPipeline
+    "EndToEndPipeline-GalaxyEU": {
+        "standard": [
+            "standardized.laz"
+        ],
+        "metadata": [
+            "collection_summary.json",
+            "{item_id}.json",
+            "{item_id}.geojson"
+        ],
+        "overviews": [
+            "top_view_00.png",
+            "top_view_01.png",
+            "section_ew.png",
+            "section_ns.png"
+        ],
+        "segmentation": [
+            "segmented.laz"
+        ],
+        "3dtiles": [
+            "tileset.json",
+            "preview.pnts",
+            "points/"
+        ]
     }
 }
 
@@ -352,7 +377,7 @@ def sync_history_for_invocation(
         
         # Get dataset_items for collection workflows
         item_ids = None
-        if workflow_name in ["EndToEndPipeline"]:  # Collection-based workflows
+        if workflow_name in ["EndToEndPipeline", "EndToEndPipeline-GalaxyEU"]:  # Collection-based workflows
             items_response = supabase_client.client.table("dataset_items").select(
                 "id"
             ).eq("dataset_id", dataset_id).order("id").execute()
