@@ -214,9 +214,10 @@ def ingest_metadata_json(
         
         # Then ingest per-item metadata
         for item_id in item_ids:
-            item_metadata = _ingest_single_metadata(
+            # Try new path first (metadata/{item_id}.json), then legacy (standard/{item_id}/)
+            item_metadata = _ingest_item_metadata(
                 storage_client, storage_config,
-                f"{s3_base_path}standard/{item_id}/"
+                s3_base_path, item_id
             )
             if item_metadata:
                 all_metadata[str(item_id)] = item_metadata
@@ -254,24 +255,84 @@ def _ingest_collection_summary(
     """
     from trees_api.workflow_config import _process_collection_summary
     
-    # Galaxy exports with the label name: "collection_summary.json"
-    summary_path = f"{s3_base_path}standard/collection_summary.json"
-    try:
-        summary_data = storage_client.download_json(
-            storage_config.products_bucket,
-            summary_path
-        )
-        if summary_data:
-            # Process the raw collection summary
-            processed = _process_collection_summary(summary_data)
-            if processed:
-                return processed
-            # If processing fails, return raw data
-            return summary_data
-    except Exception as e:
-        logger.debug(f"Could not ingest {summary_path}: {e}")
+    # Try both metadata/ and standard/ paths (metadata/ is the new location)
+    paths_to_try = [
+        f"{s3_base_path}metadata/collection_summary.json",  # New location
+        f"{s3_base_path}standard/collection_summary.json",  # Legacy location
+    ]
+    
+    for summary_path in paths_to_try:
+        try:
+            summary_data = storage_client.download_json(
+                summary_path,
+                bucket=storage_config.bucket_name_products
+            )
+            if summary_data:
+                # Process the raw collection summary
+                processed = _process_collection_summary(summary_data)
+                if processed:
+                    logger.info(f"Successfully ingested collection_summary from {summary_path}")
+                    return processed
+                # If processing fails, return raw data
+                return summary_data
+        except Exception as e:
+            logger.debug(f"Could not ingest {summary_path}: {e}")
     
     return None
+
+
+def _ingest_item_metadata(
+    storage_client: StorageClient,
+    storage_config: StorageConfig,
+    s3_base_path: str,
+    item_id: int
+) -> Optional[Dict[str, Any]]:
+    """
+    Ingest metadata for a single item, trying both new and legacy paths.
+    
+    New structure: {s3_base_path}metadata/{item_id}.json and {item_id}.geojson
+    Legacy structure: {s3_base_path}standard/{item_id}/metadata.json and convex_hull.geojson
+    """
+    metadata = {}
+    
+    # Try new paths first (metadata/{item_id}.json)
+    new_metadata_path = f"{s3_base_path}metadata/{item_id}.json"
+    new_geojson_path = f"{s3_base_path}metadata/{item_id}.geojson"
+    
+    try:
+        # Try new JSON metadata path
+        json_data = storage_client.download_json(
+            new_metadata_path,
+            bucket=storage_config.bucket_name_products
+        )
+        if json_data:
+            # New format stores all metadata in one file
+            metadata = json_data
+            logger.debug(f"Ingested item metadata from {new_metadata_path}")
+    except Exception as e:
+        logger.debug(f"Could not ingest {new_metadata_path}: {e}")
+    
+    try:
+        # Try new GeoJSON path for convex hull
+        geojson_data = storage_client.download_json(
+            new_geojson_path,
+            bucket=storage_config.bucket_name_products
+        )
+        if geojson_data:
+            metadata["convex_hull"] = geojson_data
+            logger.debug(f"Ingested convex_hull from {new_geojson_path}")
+    except Exception as e:
+        logger.debug(f"Could not ingest {new_geojson_path}: {e}")
+    
+    if metadata:
+        return metadata
+    
+    # Fall back to legacy path
+    legacy_metadata = _ingest_single_metadata(
+        storage_client, storage_config,
+        f"{s3_base_path}standard/{item_id}/"
+    )
+    return legacy_metadata
 
 
 def _ingest_single_metadata(
@@ -280,7 +341,7 @@ def _ingest_single_metadata(
     standard_path: str
 ) -> Optional[Dict[str, Any]]:
     """
-    Ingest metadata JSON files from a single path.
+    Ingest metadata JSON files from a single path (legacy format).
     
     Args:
         storage_client: Connected storage client
@@ -297,8 +358,8 @@ def _ingest_single_metadata(
     try:
         # Download and parse all records (logs + raw + standardized)
         logs, raw_record, standard_record = storage_client.download_jsonl_full(
-            storage_config.products_bucket,
-            metadata_path
+            metadata_path,
+            bucket=storage_config.bucket_name_products
         )
         
         # Store logs as array
@@ -320,8 +381,8 @@ def _ingest_single_metadata(
     convex_hull_path = f"{standard_path}convex_hull.geojson"
     try:
         convex_hull_json = storage_client.download_json(
-            storage_config.products_bucket,
-            convex_hull_path
+            convex_hull_path,
+            bucket=storage_config.bucket_name_products
         )
         if convex_hull_json:
             metadata["convex_hull"] = convex_hull_json
