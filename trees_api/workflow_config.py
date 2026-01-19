@@ -494,7 +494,18 @@ def build_workflow_parameters(
     """
     # Get file source config from galaxy client
     file_source_products = galaxy_client.config.file_source_products
+    file_source_visualization = galaxy_client.config.file_source_visualization
     file_source_scheme = galaxy_client.config.file_source_scheme
+    
+    # Exports that should go to visualization bucket (overviews and 3dtiles)
+    visualization_exports = {
+        "export_top_views",
+        "export_section_views",
+        "export_overview_gif",
+        "export_tileset",
+        "export_preview",
+        "export_points_tiles",
+    }
     
     # Get s3_base_path from galaxy_histories or fall back to default
     if s3_base_path is None:
@@ -526,12 +537,22 @@ def build_workflow_parameters(
                 dataset_id=dataset_id
             )
             
+            # Determine which bucket to use based on export type
+            # Visualization exports (overviews, 3dtiles) go to visualization bucket
+            # All other exports (standard, metadata, segmentation) go to products bucket
+            if pattern in visualization_exports:
+                file_source = file_source_visualization
+                bucket_type = "visualization"
+            else:
+                file_source = file_source_products
+                bucket_type = "products"
+            
             # Build the full URI using config (gxfiles:// for local, gxuserfiles:// for Galaxy EU)
-            uri = f"{file_source_scheme}://{file_source_products}/{path}"
+            uri = f"{file_source_scheme}://{file_source}/{path}"
             workflow_parameters[step_id] = {
                 "d_uri": uri
             }
-            logger.debug(f"Step {step_id}: d_uri = {uri}")
+            logger.debug(f"Step {step_id} ({bucket_type}): d_uri = {uri}")
     
     logger.info(
         f"Built parameters for workflow '{workflow_name}' with {len(workflow_parameters)} export steps "
