@@ -30,7 +30,7 @@ class WorkflowName(StrEnum):
 class WorkflowInvocation(BaseModel):
     id: int
     invocation_id: str
-    dataset_id: int  # References datasets (collection-based workflow)
+    dataset_id: Optional[int] = None  # References datasets (collection-based workflow), nullable for legacy records
     workflow_name: WorkflowName
     status: str = "new"  # Galaxy state - no enum needed
     created_at: datetime
@@ -39,7 +39,7 @@ class WorkflowInvocation(BaseModel):
     
     # Separate JSONB fields for efficient comparison and updates
     steps: list = []
-    inputs: dict = {}  # Galaxy returns inputs as dict with step indices as keys
+    inputs: Union[dict, list] = {}  # Galaxy returns inputs as dict, but legacy records may have empty array
     outputs: dict = {}
     output_collections: dict = {}
     jobs: list = []
