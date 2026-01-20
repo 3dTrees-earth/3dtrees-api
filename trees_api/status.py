@@ -156,22 +156,61 @@ def run_sync_once():
         }
 
 
+def run_sync_with_clients(galaxy_client, supabase_client, storage_client):
+    """
+    Run a single synchronization cycle with pre-connected clients.
+    
+    Args:
+        galaxy_client: Connected GalaxyClient
+        supabase_client: Connected SupabaseClient
+        storage_client: Connected StorageClient
+        
+    Returns:
+        dict: Statistics from the sync cycle
+    """
+    # Initialize storage config for product sync
+    storage_config = StorageConfig()
+    
+    # FAST: Sync workflow statuses from Galaxy to Supabase (~1-2 seconds)
+    logger.info("Syncing workflow statuses from Galaxy...")
+    status_stats = sync_workflow_statuses(galaxy_client, supabase_client)
+    
+    # Sync history outputs for finished workflows
+    logger.info("Syncing history outputs...")
+    history_stats = sync_history_outputs(
+        supabase_client, storage_client, storage_config
+    )
+    
+    logger.info("Status synchronization completed successfully")
+    logger.info(f"Status sync stats: {status_stats}")
+    logger.info(f"History sync stats: {history_stats}")
+    logger.info("Sync cycle completed (keeping session active)")
+    
+    return {
+        "status_stats": status_stats,
+        "history_stats": history_stats,
+        "success": True
+    }
+
+
 def run_continuous(interval: int = 10):
     """
     Run status synchronization continuously in a loop (daemon mode).
     
-    This mode is useful for:
-    - Testing environments where you want continuous monitoring
-    - Development environments
-    - Kubernetes deployments (vs cron jobs)
+    This mode reuses HTTP connections across cycles to avoid file descriptor leaks.
+    Clients are only recreated if a connection error occurs.
     
     Args:
         interval: Number of seconds between sync cycles (default: 10)
     """
     run_count = 0
+    galaxy_client = None
+    supabase_client = None
+    storage_client = None
+    
     logger.info("=" * 80)
     logger.info(f"Starting CONTINUOUS status pooler (interval: {interval}s)")
-    logger.info("This emulates a cron job running status.py every N seconds")
+    logger.info("Clients will be reused across cycles to avoid file descriptor leaks")
     logger.info("=" * 80)
     
     while True:
@@ -182,13 +221,25 @@ def run_continuous(interval: int = 10):
         logger.info("=" * 80)
         
         try:
-            stats = run_sync_once()
+            # Initialize clients on first run or after connection error
+            if galaxy_client is None or supabase_client is None or storage_client is None:
+                logger.info("Initializing clients...")
+                galaxy_client, supabase_client, storage_client = get_connected_clients()
+                logger.info("All clients connected successfully")
+            
+            stats = run_sync_with_clients(galaxy_client, supabase_client, storage_client)
             if stats["success"]:
                 logger.info(f"✅ Sync cycle #{run_count} completed successfully")
             else:
                 logger.error(f"❌ Sync cycle #{run_count} failed: {stats.get('error')}")
+                
         except Exception as e:
             logger.error(f"❌ Unexpected error in sync cycle #{run_count}: {e}")
+            # Reset clients on error to force reconnection on next cycle
+            logger.info("Resetting clients due to error (will reconnect on next cycle)")
+            galaxy_client = None
+            supabase_client = None
+            storage_client = None
         
         # Wait for next cycle
         logger.info(f"⏳ Waiting {interval}s until next sync cycle...")
