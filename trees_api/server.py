@@ -89,13 +89,17 @@ ALLOWED_ORIGINS = [
     "http://localhost:4173",           # Local preview (Vite)
     "https://3dtrees.earth",           # Production (apex)
     "https://www.3dtrees.earth",       # Production (www)
-    "https://threedtrees-dev.web.app", # Firebase hosting (dev)
+    "https://threedtrees-dev.web.app", # Firebase hosting (live)
     "https://threedtrees-dev.firebaseapp.com",  # Firebase hosting (alt)
 ]
+
+# Regex pattern for Firebase preview channels: threedtrees-dev--{channel}-{id}.web.app
+ALLOWED_ORIGIN_REGEX = r"https://threedtrees-dev--.*\.web\.app"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
