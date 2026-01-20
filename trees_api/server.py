@@ -82,12 +82,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="3DTrees API", description="API for 3DTrees", lifespan=lifespan)
 
-# CORS configuration for local development
+# CORS configuration
+# Include all production domains and local development
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",           # Local dev (Vite)
+    "http://localhost:4173",           # Local preview (Vite)
+    "https://3dtrees.earth",           # Production (apex)
+    "https://www.3dtrees.earth",       # Production (www)
+    "https://threedtrees-dev.web.app", # Firebase hosting (dev)
+    "https://threedtrees-dev.firebaseapp.com",  # Firebase hosting (alt)
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "https://3dtrees.earth"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
 
