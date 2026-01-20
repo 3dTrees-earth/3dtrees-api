@@ -623,6 +623,39 @@
             "uuid": "89e25afa-63e6-419c-8f2a-f1196e501a0c",
             "when": null,
             "workflow_outputs": []
+        },
+        "18": {
+            "annotation": "export_child_tilesets: Export child tileset JSON files to S3 3dtiles/points/ subdirectory",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 18,
+            "input_connections": {
+                "export_type|incollection": {
+                    "id": 14,
+                    "output_name": "child_tilesets"
+                }
+            },
+            "inputs": [],
+            "label": "Export Child Tilesets",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 1960,
+                "top": 700
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/3dtiles/points/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "b9f5d3e2-4c6f-5b0a-9d8e-7f3g2b1c0d9e",
+            "when": null,
+            "workflow_outputs": []
         }
     },
     "tags": [

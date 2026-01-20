@@ -161,6 +161,34 @@
             "uuid": "07d678a9-716b-4d68-bca4-847ed24d8632",
             "when": null,
             "workflow_outputs": []
+        },
+        "5": {
+            "annotation": "export_child_tilesets: Export child tileset JSON files to S3 3dtiles/points/ directory",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 5,
+            "input_connections": {
+                "export_type|incollection": {
+                    "id": 1,
+                    "output_name": "child_tilesets"
+                }
+            },
+            "inputs": [],
+            "label": "Export Child Tilesets",
+            "name": "Export to remote files source",
+            "outputs": [],
+            "position": {
+                "left": 600,
+                "top": 300
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/3dtiles/points/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "c0d6e4f3-5a7b-4c8d-9e0f-1a2b3c4d5e6f",
+            "when": null,
+            "workflow_outputs": []
         }
     },
     "tags": ["3DTrees", "Point Cloud", "3D Tiles", "Web Visualization"],
