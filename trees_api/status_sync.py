@@ -30,6 +30,42 @@ def get_linear_client() -> Optional[LinearClient]:
     return _linear_client
 
 
+# Valid workflow status values in Supabase enum
+VALID_WORKFLOW_STATUSES = {
+    'pending', 'running', 'successful', 'warning', 'errored',
+    'new', 'ready', 'queued', 'scheduled', 'ok', 'success',
+    'error', 'failed', 'cancelled', 'paused', 'deleted', 'discarded'
+}
+
+# Map unknown Galaxy statuses to valid Supabase enum values
+GALAXY_STATUS_MAPPING = {
+    'requires_materialization': 'ready',  # Still processing
+    'waiting': 'ready',
+    'upload': 'running',
+    'resubmitted': 'running',
+}
+
+
+def _map_galaxy_status(galaxy_status: str) -> str:
+    """
+    Map Galaxy status to a valid Supabase workflow_status enum value.
+    
+    Galaxy may return new/unknown status values that don't exist in our enum.
+    This function maps them to the closest valid status.
+    """
+    if galaxy_status in VALID_WORKFLOW_STATUSES:
+        return galaxy_status
+    
+    if galaxy_status in GALAXY_STATUS_MAPPING:
+        mapped = GALAXY_STATUS_MAPPING[galaxy_status]
+        logger.debug(f"Mapped Galaxy status '{galaxy_status}' to '{mapped}'")
+        return mapped
+    
+    # Unknown status - log warning and default to 'ready' (still processing)
+    logger.warning(f"Unknown Galaxy status '{galaxy_status}', defaulting to 'ready'")
+    return 'ready'
+
+
 def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: SupabaseClient) -> Dict[str, int]:
     """
     Sync workflow statuses between Galaxy and Supabase using efficient filtering.
@@ -87,8 +123,11 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
                 
                 update_data = {}
                 
-                # Check if status needs updating (no mapping needed - use Galaxy state directly)
-                galaxy_status = galaxy_inv['state']
+                # Check if status needs updating
+                # Map unknown Galaxy states to valid Supabase enum values
+                galaxy_status_raw = galaxy_inv['state']
+                galaxy_status = _map_galaxy_status(galaxy_status_raw)
+                
                 if supabase_inv.status != galaxy_status:
                     logger.info(f"Updating status for invocation {supabase_inv.invocation_id}: {supabase_inv.status} -> {galaxy_status}")
                     update_data['status'] = galaxy_status
@@ -121,8 +160,12 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
                             ok_count += 1
                         elif job_state in ['error', 'failed', 'cancelled']:
                             all_jobs_successful = False
+                        elif job_state == 'paused':
+                            # Paused jobs are stuck (waiting for failed upstream)
+                            # Count as finished but not successful
+                            all_jobs_successful = False
                         else:
-                            # Job is still running/queued
+                            # Job is still running/queued/new
                             all_jobs_finished = False
                             all_jobs_successful = False
                             running_count += 1
