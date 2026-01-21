@@ -279,7 +279,7 @@
             },
             "post_job_actions": {},
             "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_overviews/3dtrees_overviews/1.2.0+galaxy1",
-            "tool_state": "{\"camera_distance\": \"35.0\", \"cmap\": \"turbo\", \"image_height\": \"768\", \"image_width\": \"1024\", \"input\": {\"__class__\": \"ConnectedValue\"}, \"max_total_points\": \"40000000\", \"section_width\": \"10\", \"top_views_deg\": \"180\"}",
+            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}}",
             "tool_version": "1.2.0+galaxy1",
             "type": "tool",
             "uuid": "0b454a3d-8196-4208-842a-79a729f00a2d",
@@ -378,7 +378,7 @@
             },
             "post_job_actions": {},
             "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_tile_merge/3dtrees_tile_merge/1.0.3+galaxy0",
-            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"operation\": {\"task\": \"tile\", \"tile_size\": 50, \"overlap\": 20, \"tiling_threshold\": 3.0, \"points_threshold\": 1000, \"subsampling_resolution\": 10}}",
+            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"operation\": {\"task\": \"tile\", \"__current_case__\": 0}}",
             "tool_version": "1.0.3+galaxy0",
             "type": "tool",
             "uuid": "7b561a98-b8b3-4139-b986-a019663ea766",
@@ -444,7 +444,7 @@
             },
             "post_job_actions": {},
             "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_tile_merge/3dtrees_tile_merge/1.0.3+galaxy0",
-            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"operation\": {\"task\": \"merge\", \"buffer\": 0.2, \"min_cluster_size\": 300, \"initial_radius\": 1.0, \"max_radius\": 5.0, \"radius_step\": 1.0}}",
+            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"operation\": {\"task\": \"merge\", \"__current_case__\": 1}}",
             "tool_version": "1.0.3+galaxy0",
             "type": "tool",
             "uuid": "f858c2ed-b151-4dbf-862b-7839f600351f",
@@ -669,5 +669,5 @@
         "S3Export"
     ],
     "uuid": "a237b937-642a-4301-b97f-0e11622dd700",
-    "version": 3
+    "version": 4
 }
