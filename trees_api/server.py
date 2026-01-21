@@ -16,6 +16,7 @@ from trees_api.storage_client import StorageClient
 from trees_api.connection_manager import ConnectionManager
 from trees_api.upload_router import router as upload_router
 from trees_api.workflow_config import build_workflow_parameters
+from trees_api.supabase_log_handler import setup_supabase_logging
 
 
 logger = logging.getLogger("uvicorn")
@@ -61,6 +62,12 @@ async def lifespan(app: FastAPI):
     connection_manager.connect_supabase()
     connection_manager.connect_storage()  # Processor storage (read raw, write products)
     connection_manager.connect_uploader_storage()  # Uploader storage (write raw)
+    
+    # Set up Supabase logging if connected
+    supabase_client = connection_manager.get_supabase_client()
+    if supabase_client:
+        setup_supabase_logging(supabase_client.client, source="api")
+        logger.info("Supabase logging enabled")
     
     # Start background retry task
     retry_task = await connection_manager.start_retry_task(interval=60)

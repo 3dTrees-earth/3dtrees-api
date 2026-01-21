@@ -48,6 +48,7 @@ from trees_api.storage_client import StorageClient
 from trees_api.config import GalaxyConfig, SupabaseConfig, StorageConfig
 from trees_api.status_sync import sync_workflow_statuses
 from trees_api.history_sync import sync_history_outputs
+from trees_api.supabase_log_handler import setup_supabase_logging
 # Note: result_sync is NOT imported - Galaxy export tool writes outputs directly to S3
 # so we don't need to download from Galaxy history and re-upload
 
@@ -92,6 +93,10 @@ def get_connected_clients():
             logger.info(f"New user created: {supabase_client.email}")
         else:
             raise e
+    
+    # Set up Supabase logging
+    setup_supabase_logging(supabase_client.client, source="status_pooler")
+    logger.info("Supabase logging enabled")
     
     storage_client.connect()
     
