@@ -302,8 +302,10 @@ def _create_linear_issue_for_failure(
     try:
         linear_client = get_linear_client()
         if not linear_client:
-            logger.debug("Linear client not available, skipping issue creation")
+            logger.info("Linear client not configured or disabled, skipping issue creation")
             return
+        
+        logger.info(f"Creating Linear issue for failed workflow {invocation_id} (dataset {dataset_id})")
         
         # Collect detailed info for failed jobs
         failed_jobs: List[FailedJob] = []

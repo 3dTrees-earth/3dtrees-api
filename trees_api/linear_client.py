@@ -369,9 +369,10 @@ def create_linear_client_if_enabled():
         from trees_api.config import LinearConfig
         config = LinearConfig()
         if config.is_configured():
+            logger.info("Linear client initialized and enabled")
             return LinearClient(config)
         else:
-            logger.debug("Linear integration not configured or disabled")
+            logger.info(f"Linear integration disabled (api_key={bool(config.api_key)}, enabled={config.enabled})")
             return None
     except Exception as e:
         logger.warning(f"Could not initialize Linear client: {e}")
