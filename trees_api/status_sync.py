@@ -3,16 +3,31 @@ Galaxy workflow status synchronization module.
 
 This module handles syncing workflow invocation statuses from Galaxy to Supabase,
 including job states, messages, outputs, and completion detection.
+
+When workflows fail, this module also creates Linear issues automatically
+(if LINEAR_ENABLED=true and LINEAR_API_KEY is set).
 """
 import json
 import logging
-from typing import Dict
+from typing import Dict, List, Optional
 from datetime import datetime
 
 from trees_api.galaxy_client import GalaxyClient
 from trees_api.supabase_client import SupabaseClient
+from trees_api.linear_client import LinearClient, FailedJob, create_linear_client_if_enabled
 
 logger = logging.getLogger("uvicorn")
+
+# Global Linear client (initialized once, reused)
+_linear_client: Optional[LinearClient] = None
+
+
+def get_linear_client() -> Optional[LinearClient]:
+    """Get or create the Linear client singleton."""
+    global _linear_client
+    if _linear_client is None:
+        _linear_client = create_linear_client_if_enabled()
+    return _linear_client
 
 
 def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: SupabaseClient) -> Dict[str, int]:
@@ -124,6 +139,16 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
                             update_data['status'] = 'error'
                             stats['status_updated'] += 1
                             logger.info(f"Workflow {supabase_inv.invocation_id} completed with errors: {ok_count}/{actual_job_count} jobs successful")
+                            
+                            # Create Linear issue for failed workflow
+                            _create_linear_issue_for_failure(
+                                galaxy_client=galaxy_client,
+                                invocation_id=supabase_inv.invocation_id,
+                                dataset_id=supabase_inv.dataset_id,
+                                workflow_name=supabase_inv.workflow_name,
+                                jobs=galaxy_inv.get('jobs', []),
+                                messages=galaxy_inv.get('messages', []),
+                            )
                     else:
                         logger.debug(f"Workflow {supabase_inv.invocation_id}: {ok_count}/{actual_job_count} jobs ok, {running_count} still running")
                 
@@ -207,4 +232,92 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
         logger.error(f"Error during status sync: {e}")
         stats['errors'] += 1
         return stats
+
+
+def _create_linear_issue_for_failure(
+    galaxy_client: GalaxyClient,
+    invocation_id: str,
+    dataset_id: int,
+    workflow_name: str,
+    jobs: List[Dict],
+    messages: List[Dict],
+) -> None:
+    """
+    Create a Linear issue for a failed workflow.
+    
+    This function is resilient - it catches all exceptions and logs them,
+    never allowing Linear failures to block workflow sync.
+    
+    Args:
+        galaxy_client: Galaxy client for fetching job details
+        invocation_id: The failed invocation ID
+        dataset_id: The dataset ID
+        workflow_name: Name of the workflow
+        jobs: List of job dicts from Galaxy
+        messages: List of message dicts from Galaxy
+    """
+    try:
+        linear_client = get_linear_client()
+        if not linear_client:
+            logger.debug("Linear client not available, skipping issue creation")
+            return
+        
+        # Collect detailed info for failed jobs
+        failed_jobs: List[FailedJob] = []
+        
+        for job in jobs:
+            job_state = job.get('state', '')
+            if job_state in ['error', 'failed']:
+                job_id = job.get('id')
+                tool_id = job.get('tool_id', '')
+                
+                # Extract tool name from tool_id
+                # e.g., "toolshed.g2.bx.psu.edu/.../3dtrees_overviews/1.2.0" -> "3dtrees_overviews"
+                tool_name = tool_id.split("/")[-2] if "/" in tool_id else tool_id
+                
+                # Get detailed job info from Galaxy
+                if job_id:
+                    try:
+                        details = galaxy_client.get_job_details(job_id)
+                        failed_jobs.append(FailedJob(
+                            tool_id=tool_id,
+                            tool_name=tool_name,
+                            exit_code=details.get('exit_code'),
+                            stderr=details.get('tool_stderr', '')[:2000],  # Truncate
+                            stdout=details.get('tool_stdout', '')[:500],   # Truncate
+                            job_messages=details.get('job_messages', []),
+                        ))
+                    except Exception as e:
+                        logger.warning(f"Could not get job details for {job_id}: {e}")
+                        # Still add the job with minimal info
+                        failed_jobs.append(FailedJob(
+                            tool_id=tool_id,
+                            tool_name=tool_name,
+                            exit_code=None,
+                            stderr="",
+                            stdout="",
+                            job_messages=[],
+                        ))
+        
+        if not failed_jobs:
+            logger.warning(f"No failed jobs found for invocation {invocation_id}, skipping Linear issue")
+            return
+        
+        # Create the Linear issue
+        issue_id = linear_client.create_workflow_failure_issue(
+            dataset_id=dataset_id,
+            invocation_id=invocation_id,
+            workflow_name=workflow_name,
+            failed_jobs=failed_jobs,
+            messages=messages,
+        )
+        
+        if issue_id:
+            logger.info(f"Created Linear issue {issue_id} for failed workflow {invocation_id}")
+        else:
+            logger.warning(f"Failed to create Linear issue for invocation {invocation_id}")
+            
+    except Exception as e:
+        # Never let Linear errors block workflow sync
+        logger.error(f"Error creating Linear issue for invocation {invocation_id}: {e}")
 

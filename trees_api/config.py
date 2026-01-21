@@ -211,6 +211,30 @@ class APIConfig(BaseSettings):
     )
 
 
+class LinearConfig(BaseSettings):
+    """Linear API configuration for automated bug reporting."""
+    
+    api_key: Optional[str] = Field(default=None, description="Linear API key")
+    team_id: str = Field(
+        default="7ac53333-6ade-4845-b5f5-76ead398222d",
+        description="Linear team ID (3DTrees)"
+    )
+    enabled: bool = Field(
+        default=False,
+        description="Enable automated Linear issue creation (set to true in production)"
+    )
+    
+    model_config = SettingsConfigDict(
+        case_sensitive=False,
+        env_prefix="LINEAR_",
+        extra="ignore",
+    )
+    
+    def is_configured(self) -> bool:
+        """Check if Linear is properly configured and enabled."""
+        return bool(self.api_key and self.enabled)
+
+
 class AppConfig:
     """
     Aggregated configuration with validation on startup.

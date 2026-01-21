@@ -1232,6 +1232,62 @@ class GalaxyClient:
         logger.info(f"Retrieved {len(invocation_data)} workflow invocations")
         return invocation_data
     
+    def get_job_details(self, job_id: str) -> Dict[str, Any]:
+        """
+        Get detailed job information including stderr, exit_code, etc.
+        
+        This is used for diagnostic information when jobs fail.
+        Requires the 'full' parameter to get stderr/stdout.
+        
+        Args:
+            job_id: Galaxy job ID
+            
+        Returns:
+            Dictionary with job details including:
+            - exit_code: Process exit code (139=SIGSEGV, 137=OOM, etc.)
+            - tool_stderr: Error output from the tool
+            - tool_stdout: Standard output from the tool
+            - job_messages: Galaxy-level error messages
+            - state: Job state
+            - tool_id: Tool identifier
+            
+        Raises:
+            RuntimeError: If not connected to Galaxy
+        """
+        if not self.gi:
+            raise RuntimeError("Not connected to Galaxy. Call connect() first.")
+        
+        try:
+            response = self.gi.gi.make_get_request(
+                f"{self.gi.gi.url}/jobs/{job_id}",
+                params={"full": "true"}
+            )
+            job_data = response.json()
+            
+            # Extract relevant fields
+            return {
+                "id": job_data.get("id"),
+                "state": job_data.get("state"),
+                "tool_id": job_data.get("tool_id"),
+                "exit_code": job_data.get("exit_code"),
+                "tool_stderr": job_data.get("tool_stderr", ""),
+                "tool_stdout": job_data.get("tool_stdout", ""),
+                "job_messages": [m.get("message", str(m)) for m in job_data.get("job_messages", [])],
+                "create_time": job_data.get("create_time"),
+                "update_time": job_data.get("update_time"),
+            }
+        except Exception as e:
+            logger.warning(f"Could not get job details for {job_id}: {e}")
+            return {
+                "id": job_id,
+                "state": "unknown",
+                "tool_id": "",
+                "exit_code": None,
+                "tool_stderr": "",
+                "tool_stdout": "",
+                "job_messages": [],
+            }
+    
     def _serialize_step(self, step) -> Dict[str, Any]:
         """
         Serialize a workflow step by filtering out non-serializable attributes.
