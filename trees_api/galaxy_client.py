@@ -979,6 +979,36 @@ class GalaxyClient:
             return history
         except Exception as e:
             raise RuntimeError(f"Failed to create history '{name}': {e}") from e
+
+    def delete_history(self, history_id: str, purge: bool = True) -> bool:
+        """
+        Delete a history from Galaxy.
+        
+        Args:
+            history_id: Galaxy history ID to delete
+            purge: If True, permanently purge the history (default). 
+                   If False, just mark as deleted.
+            
+        Returns:
+            True if deletion was successful
+            
+        Raises:
+            RuntimeError: If not connected to Galaxy
+            RuntimeError: If deletion fails
+        """
+        if not self.gi:
+            raise RuntimeError("Not connected to Galaxy. Call connect() first.")
+            
+        try:
+            logger.info(f"Deleting Galaxy history {history_id} (purge={purge})")
+            # Use the low-level API since bioblend's delete method may not support purge
+            self.gi.histories.delete_history(history_id, purge=purge)
+            logger.info(f"Successfully deleted Galaxy history {history_id}")
+            return True
+        except Exception as e:
+            # Log but don't fail if Galaxy history doesn't exist or is already deleted
+            logger.warning(f"Failed to delete Galaxy history {history_id}: {e}")
+            return False
     
     def upload_file(self, history, file_path: Path):
         """

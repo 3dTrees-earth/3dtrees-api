@@ -279,6 +279,22 @@ def create_job(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Loading Workflow {workflow_name} failed: {e}")
     
+    # Handle overwrite: delete old invocations and history
+    if overwrite:
+        logger.info(f"Overwrite mode: cleaning up existing data for dataset {dataset_id}")
+        
+        # Delete old workflow invocations from Supabase
+        deleted_count = supabase.delete_workflow_invocations_by_dataset(dataset_id_int)
+        if deleted_count > 0:
+            logger.info(f"Deleted {deleted_count} old workflow invocation(s)")
+        
+        # Delete old Galaxy history (both from Galaxy and Supabase)
+        old_history_id = supabase.delete_galaxy_history_by_dataset(dataset_id_int)
+        if old_history_id:
+            # Also delete/purge from Galaxy to free up resources
+            galaxy.delete_history(old_history_id, purge=True)
+            logger.info(f"Deleted old Galaxy history {old_history_id}")
+    
     # Get or create Galaxy history for this dataset
     history_name = f"{workflow_name} - Dataset {dataset_id}"
     

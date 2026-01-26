@@ -758,3 +758,69 @@ class SupabaseClient:
         except Exception as e:
             logger.error(f"Error updating galaxy_history outputs for {history_id}: {e}")
             raise RuntimeError(f"Failed to update galaxy_history outputs: {e}") from e
+
+    def delete_workflow_invocations_by_dataset(self, dataset_id: int) -> int:
+        """
+        Delete all workflow invocations for a dataset.
+        
+        Args:
+            dataset_id: The dataset ID
+            
+        Returns:
+            Number of records deleted
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            # First count existing records
+            count_response = (
+                self.client.table("galaxy_workflow_invocations")
+                .select("id", count="exact")
+                .eq("dataset_id", dataset_id)
+                .execute()
+            )
+            count = count_response.count or 0
+            
+            if count > 0:
+                # Delete all invocations for this dataset
+                self.client.table("galaxy_workflow_invocations").delete().eq("dataset_id", dataset_id).execute()
+                logger.info(f"Deleted {count} workflow invocation(s) for dataset {dataset_id}")
+            
+            return count
+            
+        except Exception as e:
+            logger.error(f"Error deleting workflow invocations for dataset {dataset_id}: {e}")
+            raise RuntimeError(f"Failed to delete workflow invocations: {e}") from e
+
+    def delete_galaxy_history_by_dataset(self, dataset_id: int) -> Optional[str]:
+        """
+        Delete galaxy_history record for a dataset.
+        
+        Args:
+            dataset_id: The dataset ID
+            
+        Returns:
+            The Galaxy history_id that was deleted, or None if no record existed
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        
+        try:
+            # First get the history_id so we can return it
+            existing = self.get_galaxy_history_by_dataset(dataset_id)
+            if not existing:
+                logger.debug(f"No galaxy_history found for dataset {dataset_id}")
+                return None
+            
+            history_id = existing.get("history_id")
+            
+            # Delete the record
+            self.client.table("galaxy_histories").delete().eq("dataset_id", dataset_id).execute()
+            logger.info(f"Deleted galaxy_history record for dataset {dataset_id} (history_id: {history_id})")
+            
+            return history_id
+            
+        except Exception as e:
+            logger.error(f"Error deleting galaxy_history for dataset {dataset_id}: {e}")
+            raise RuntimeError(f"Failed to delete galaxy_history: {e}") from e
