@@ -192,7 +192,8 @@ WORKFLOW_EXPORT_ANNOTATIONS = {
         "export_segmented_laz": "{s3_base_path}segmentation/",
         "export_tileset": "{s3_base_path}3dtiles/",
         "export_preview": "{s3_base_path}3dtiles/",
-        "export_points_tiles": "{s3_base_path}3dtiles/points/"
+        "export_points_tiles": "{s3_base_path}3dtiles/points/",
+        "export_child_tilesets": "{s3_base_path}3dtiles/points/"
     },
     # Galaxy EU version - same as EndToEndPipeline (full outputs available)
     "EndToEndPipeline-GalaxyEU": {
@@ -207,7 +208,8 @@ WORKFLOW_EXPORT_ANNOTATIONS = {
         "export_segmented_laz": "{s3_base_path}segmentation/",
         "export_tileset": "{s3_base_path}3dtiles/",
         "export_preview": "{s3_base_path}3dtiles/",
-        "export_points_tiles": "{s3_base_path}3dtiles/points/"
+        "export_points_tiles": "{s3_base_path}3dtiles/points/",
+        "export_child_tilesets": "{s3_base_path}3dtiles/points/"
     }
 }
 
@@ -505,6 +507,7 @@ def build_workflow_parameters(
         "export_tileset",
         "export_preview",
         "export_points_tiles",
+        "export_child_tilesets",
     }
     
     # Get s3_base_path from galaxy_histories or fall back to default
