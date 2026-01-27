@@ -1001,9 +1001,10 @@ class GalaxyClient:
             
         try:
             logger.info(f"Deleting Galaxy history {history_id} (purge={purge})")
-            # Use the low-level API since bioblend's delete method may not support purge
-            self.gi.histories.delete_history(history_id, purge=purge)
-            logger.info(f"Successfully deleted Galaxy history {history_id}")
+            # Use the low-level API (self.gi.gi) since self.gi is GalaxyObjectsInstance
+            # which doesn't have delete_history on ObjHistoryClient
+            result = self.gi.gi.histories.delete_history(history_id, purge=purge)
+            logger.info(f"Successfully deleted Galaxy history {history_id}: {result}")
             return True
         except Exception as e:
             # Log but don't fail if Galaxy history doesn't exist or is already deleted
