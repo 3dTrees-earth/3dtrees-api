@@ -292,8 +292,10 @@ def create_job(
         old_history_id = supabase.delete_galaxy_history_by_dataset(dataset_id_int)
         if old_history_id:
             # Also delete/purge from Galaxy to free up resources
-            galaxy.delete_history(old_history_id, purge=True)
-            logger.info(f"Deleted old Galaxy history {old_history_id}")
+            if galaxy.delete_history(old_history_id, purge=True):
+                logger.info(f"Deleted old Galaxy history {old_history_id}")
+            else:
+                logger.warning(f"Failed to delete Galaxy history {old_history_id} - may be orphaned")
     
     # Get or create Galaxy history for this dataset
     history_name = f"{workflow_name} - Dataset {dataset_id}"
