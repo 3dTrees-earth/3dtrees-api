@@ -478,18 +478,28 @@ def sync_history_for_invocation(
         logger.info(f"Synced outputs for invocation {invocation_id} to history {history_fk}")
         
         # Delete Galaxy history to prevent accumulation of datasets
+        logger.info(f"History deletion check: delete_history_after_sync={delete_history_after_sync}, galaxy_client_available={galaxy_client is not None}")
         if delete_history_after_sync and galaxy_client:
             try:
                 galaxy_history_id = history.get("history_id")
+                logger.info(f"Galaxy history_id from record: {galaxy_history_id}")
                 if galaxy_history_id:
                     logger.info(f"Deleting Galaxy history {galaxy_history_id} after successful sync")
-                    if galaxy_client.delete_history(galaxy_history_id, purge=True):
+                    deletion_result = galaxy_client.delete_history(galaxy_history_id, purge=True)
+                    logger.info(f"Galaxy history deletion result: {deletion_result}")
+                    if deletion_result:
                         logger.info(f"Galaxy history {galaxy_history_id} deleted successfully")
                     else:
                         logger.warning(f"Failed to delete Galaxy history {galaxy_history_id}")
+                else:
+                    logger.warning(f"No history_id in history record: {history}")
             except Exception as cleanup_error:
                 # Don't fail the sync if cleanup fails
                 logger.warning(f"Error during history cleanup for {invocation_id}: {cleanup_error}")
+        elif not delete_history_after_sync:
+            logger.info("History deletion disabled (delete_history_after_sync=False)")
+        elif not galaxy_client:
+            logger.warning("Cannot delete history: galaxy_client is None")
         
         return True
         
