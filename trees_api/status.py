@@ -127,9 +127,12 @@ def run_sync_once():
         
         # Sync history outputs for finished workflows
         # This stores output paths in galaxy_histories.outputs and ingests metadata JSON
+        # Also deletes Galaxy histories after successful sync to prevent accumulation
         logger.info("Syncing history outputs...")
         history_stats = sync_history_outputs(
-            supabase_client, storage_client, storage_config
+            supabase_client, storage_client, storage_config,
+            galaxy_client=galaxy_client,
+            delete_history_after_sync=True
         )
         
         # Note: We do NOT sync results from Galaxy history to S3 here because:
@@ -181,9 +184,12 @@ def run_sync_with_clients(galaxy_client, supabase_client, storage_client):
     status_stats = sync_workflow_statuses(galaxy_client, supabase_client)
     
     # Sync history outputs for finished workflows
+    # Also deletes Galaxy histories after successful sync to prevent accumulation
     logger.info("Syncing history outputs...")
     history_stats = sync_history_outputs(
-        supabase_client, storage_client, storage_config
+        supabase_client, storage_client, storage_config,
+        galaxy_client=galaxy_client,
+        delete_history_after_sync=True
     )
     
     logger.info("Status synchronization completed successfully")

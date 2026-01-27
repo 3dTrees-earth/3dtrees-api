@@ -14,6 +14,7 @@ from datetime import datetime
 from trees_api.storage_client import StorageClient
 from trees_api.supabase_client import SupabaseClient
 from trees_api.config import StorageConfig
+from trees_api.galaxy_client import GalaxyClient
 
 logger = logging.getLogger("uvicorn")
 
@@ -399,13 +400,18 @@ def sync_history_for_invocation(
     invocation_id: str,
     workflow_name: str,
     history_fk: int,
-    dataset_id: int
+    dataset_id: int,
+    galaxy_client: Optional[GalaxyClient] = None,
+    delete_history_after_sync: bool = True
 ) -> bool:
     """
     Sync outputs for a single workflow invocation to its galaxy_history.
     
     For collection workflows, queries all dataset_items for the dataset
     and builds outputs for each item.
+    
+    After successful sync, optionally deletes the Galaxy history to prevent
+    accumulation of datasets in Galaxy.
     
     Args:
         supabase_client: Connected Supabase client
@@ -415,6 +421,8 @@ def sync_history_for_invocation(
         workflow_name: Name of the workflow
         history_fk: ID of the galaxy_histories record
         dataset_id: ID of the dataset (for querying items)
+        galaxy_client: Optional Galaxy client for history cleanup
+        delete_history_after_sync: If True, delete Galaxy history after successful sync
         
     Returns:
         True if sync was successful
@@ -468,6 +476,21 @@ def sync_history_for_invocation(
         }).eq("invocation_id", invocation_id).execute()
         
         logger.info(f"Synced outputs for invocation {invocation_id} to history {history_fk}")
+        
+        # Delete Galaxy history to prevent accumulation of datasets
+        if delete_history_after_sync and galaxy_client:
+            try:
+                galaxy_history_id = history.get("history_id")
+                if galaxy_history_id:
+                    logger.info(f"Deleting Galaxy history {galaxy_history_id} after successful sync")
+                    if galaxy_client.delete_history(galaxy_history_id, purge=True):
+                        logger.info(f"Galaxy history {galaxy_history_id} deleted successfully")
+                    else:
+                        logger.warning(f"Failed to delete Galaxy history {galaxy_history_id}")
+            except Exception as cleanup_error:
+                # Don't fail the sync if cleanup fails
+                logger.warning(f"Error during history cleanup for {invocation_id}: {cleanup_error}")
+        
         return True
         
     except Exception as e:
@@ -478,7 +501,9 @@ def sync_history_for_invocation(
 def sync_history_outputs(
     supabase_client: SupabaseClient,
     storage_client: StorageClient,
-    storage_config: StorageConfig
+    storage_config: StorageConfig,
+    galaxy_client: Optional[GalaxyClient] = None,
+    delete_history_after_sync: bool = True
 ) -> Dict[str, int]:
     """
     Sync outputs for all finished workflows that haven't been synced yet.
@@ -488,10 +513,15 @@ def sync_history_outputs(
     - results_synced is False
     - history_fk is not null
     
+    After successful sync, optionally deletes the Galaxy history to prevent
+    accumulation of datasets in Galaxy.
+    
     Args:
         supabase_client: Connected Supabase client
         storage_client: Connected storage client
         storage_config: Storage configuration
+        galaxy_client: Optional Galaxy client for history cleanup
+        delete_history_after_sync: If True, delete Galaxy history after successful sync
         
     Returns:
         Dict with sync statistics
@@ -499,6 +529,7 @@ def sync_history_outputs(
     stats = {
         'workflows_checked': 0,
         'outputs_synced': 0,
+        'histories_deleted': 0,
         'metadata_ingested': 0,
         'errors': 0
     }
@@ -530,11 +561,15 @@ def sync_history_outputs(
                 invocation_id,
                 workflow_name,
                 history_fk,
-                dataset_id
+                dataset_id,
+                galaxy_client=galaxy_client,
+                delete_history_after_sync=delete_history_after_sync
             )
             
             if success:
                 stats['outputs_synced'] += 1
+                if delete_history_after_sync and galaxy_client:
+                    stats['histories_deleted'] += 1
             else:
                 stats['errors'] += 1
         
