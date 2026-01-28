@@ -133,67 +133,35 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
                     update_data['status'] = galaxy_status
                     stats['status_updated'] += 1
                 
-                # Check if workflow is truly finished by examining both workflow state and job states
+                # Check if workflow is truly finished by examining Galaxy's invocation state
+                # IMPORTANT: Only trust Galaxy's reported state for completion detection.
+                # Do NOT override status based on job states alone - this causes race conditions
+                # where we mark workflows as 'ok' while Galaxy is still scheduling more steps,
+                # which triggers history deletion and cancels the running invocation.
                 workflow_finished = False
-                should_update_status = False
                 
-                # First check: workflow invocation is in terminal state
+                # Only consider finished when Galaxy reports a terminal state
                 if galaxy_status in ['ok', 'success', 'error', 'failed', 'cancelled', 'deleted', 'discarded', 'warning']:
                     workflow_finished = True
-                    logger.debug(f"Workflow {supabase_inv.invocation_id} finished: workflow state is {galaxy_status}")
-                
-                # Second check: Check if ALL jobs are in terminal state
-                # For collection workflows, job count = num_files × num_tool_steps
-                # So we can't compare against expected_job_count from workflow file
-                elif galaxy_inv.get('jobs'):
-                    actual_job_count = len(galaxy_inv['jobs'])
+                    logger.debug(f"Workflow {supabase_inv.invocation_id} finished: Galaxy state is {galaxy_status}")
                     
-                    # Check if all jobs are in terminal state
-                    all_jobs_finished = True
-                    all_jobs_successful = True
-                    running_count = 0
-                    ok_count = 0
-                    
-                    for job in galaxy_inv['jobs']:
-                        job_state = job.get('state', '')
-                        if job_state == 'ok':
-                            ok_count += 1
-                        elif job_state in ['error', 'failed', 'cancelled']:
-                            all_jobs_successful = False
-                        elif job_state == 'paused':
-                            # Paused jobs are stuck (waiting for failed upstream)
-                            # Count as finished but not successful
-                            all_jobs_successful = False
-                        else:
-                            # Job is still running/queued/new
-                            all_jobs_finished = False
-                            all_jobs_successful = False
-                            running_count += 1
-                    
-                    if all_jobs_finished and actual_job_count > 0:
-                        workflow_finished = True
-                        should_update_status = True
-                        # Update workflow status based on job states
-                        if all_jobs_successful:
-                            update_data['status'] = 'ok'
-                            stats['status_updated'] += 1
-                            logger.info(f"Workflow {supabase_inv.invocation_id} completed: all {actual_job_count} jobs successful")
-                        else:
-                            update_data['status'] = 'error'
-                            stats['status_updated'] += 1
-                            logger.info(f"Workflow {supabase_inv.invocation_id} completed with errors: {ok_count}/{actual_job_count} jobs successful")
-                            
-                            # Create Linear issue for failed workflow
-                            _create_linear_issue_for_failure(
-                                galaxy_client=galaxy_client,
-                                invocation_id=supabase_inv.invocation_id,
-                                dataset_id=supabase_inv.dataset_id,
-                                workflow_name=supabase_inv.workflow_name,
-                                jobs=galaxy_inv.get('jobs', []),
-                                messages=galaxy_inv.get('messages', []),
-                            )
-                    else:
-                        logger.debug(f"Workflow {supabase_inv.invocation_id}: {ok_count}/{actual_job_count} jobs ok, {running_count} still running")
+                    # If Galaxy says error/failed but we haven't created an issue yet, do so now
+                    if galaxy_status in ['error', 'failed']:
+                        _create_linear_issue_for_failure(
+                            galaxy_client=galaxy_client,
+                            invocation_id=supabase_inv.invocation_id,
+                            dataset_id=supabase_inv.dataset_id,
+                            workflow_name=supabase_inv.workflow_name,
+                            jobs=galaxy_inv.get('jobs', []),
+                            messages=galaxy_inv.get('messages', []),
+                        )
+                else:
+                    # Log job progress for debugging, but don't change status
+                    jobs = galaxy_inv.get('jobs', [])
+                    if jobs:
+                        ok_count = sum(1 for j in jobs if j.get('state') == 'ok')
+                        running_count = sum(1 for j in jobs if j.get('state') in ['new', 'queued', 'running'])
+                        logger.debug(f"Workflow {supabase_inv.invocation_id}: Galaxy state={galaxy_status}, {ok_count}/{len(jobs)} jobs ok, {running_count} still running")
                 
                 # Set finished_at timestamp if workflow is finished
                 if workflow_finished and not supabase_inv.finished_at:
