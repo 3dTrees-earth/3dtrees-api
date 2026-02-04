@@ -648,7 +648,7 @@
                 "owner": "bgruening",
                 "tool_shed": "toolshed.g2.bx.psu.edu"
             },
-            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"encoding\": \"BROTLI\", \"method\": \"poisson\", \"attributes\": \"rgb,intensity,classification,PredInstance\", \"keep_chunks\": false, \"no_chunking\": false, \"no_indexing\": false, \"generate_page\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
+            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
             "tool_uuid": null,
             "tool_version": "1.0.0+galaxy0",
             "type": "tool",
