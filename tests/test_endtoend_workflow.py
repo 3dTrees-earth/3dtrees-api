@@ -28,6 +28,7 @@ Requires GPU for SegmentAnyTree step - will fail if GPU unavailable.
 """
 import json
 import logging
+import os
 import time
 import requests
 from typing import Dict, Any
@@ -40,6 +41,8 @@ from trees_api.storage_client import StorageClient
 from trees_api.supabase_client import SupabaseClient
 
 logger = logging.getLogger(__name__)
+API_PORT = os.getenv("API_SERVER_PORT", "8001")
+API_BASE_URL = os.getenv("API_SERVER_URL", f"http://localhost:{API_PORT}")
 
 
 def test_endtoend_workflow(
@@ -88,7 +91,7 @@ def test_endtoend_workflow(
         pytest.fail(f"Test file not found in S3: {e}")
     
     # Step 2: Call API endpoint to start workflow
-    api_url = "http://localhost:8000/jobs"
+    api_url = f"{API_BASE_URL}/jobs"
     payload = {
         "dataset_id": str(test_remote_file.id),
         "workflow_name": "EndToEndPipeline",

@@ -93,7 +93,9 @@ app = FastAPI(title="3DTrees API", description="API for 3DTrees", lifespan=lifes
 # Include all production domains and local development
 ALLOWED_ORIGINS = [
     "http://localhost:5173",           # Local dev (Vite)
+    "http://localhost:5174",           # Local dev (Vite alternate port)
     "http://localhost:4173",           # Local preview (Vite)
+    "http://127.0.0.1:5174",           # Local dev (Vite alternate port)
     "https://3dtrees.earth",           # Production (apex)
     "https://www.3dtrees.earth",       # Production (www)
     "https://threedtrees-dev.web.app", # Firebase hosting (live)

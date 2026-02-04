@@ -12,6 +12,7 @@ Two test scenarios:
 - Multi-file: Multiple LAZ files merged → 3D Tiles (~2 minutes)
 """
 import logging
+import os
 import time
 
 import pytest
@@ -23,6 +24,8 @@ from trees_api.storage_client import StorageClient
 from trees_api.supabase_client import SupabaseClient
 
 logger = logging.getLogger(__name__)
+API_PORT = os.getenv("API_SERVER_PORT", "8001")
+API_BASE_URL = os.getenv("API_SERVER_URL", f"http://localhost:{API_PORT}")
 
 
 def _run_py3dtiles_workflow_test(
@@ -64,7 +67,7 @@ def _run_py3dtiles_workflow_test(
             pytest.fail(f"Test file not found in S3: {item['bucket_path']} - {e}")
     
     # Step 2: Call API endpoint to start workflow
-    api_url = "http://localhost:8000/jobs"
+    api_url = f"{API_BASE_URL}/jobs"
     payload = {
         "dataset_id": str(dataset.id),
         "workflow_name": "Py3DTiles",
