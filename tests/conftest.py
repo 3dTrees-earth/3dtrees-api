@@ -39,10 +39,11 @@ def storage_client() -> StorageClient:
 
 def _ensure_bucket_exists(storage_client: StorageClient) -> None:
     """Ensure the required buckets exist, create if they don't (for local MinIO only)."""
-    # Check/create raw and products buckets for two-bucket setup
+    # Check/create raw, products, and visualization buckets for local dev
     buckets_to_check = [
         storage_client.bucket_name_raw,
         storage_client.bucket_name_products,
+        storage_client.config.bucket_name_visualization,
     ]
     
     for bucket_name in buckets_to_check:
