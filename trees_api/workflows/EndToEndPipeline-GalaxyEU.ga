@@ -1,6 +1,6 @@
 {
     "a_galaxy_workflow": "true",
-    "annotation": "Full pipeline workflow for Galaxy EU: Collection Check \u2192 Standardization \u2192 Exports \u2192 Overviews \u2192 Exports \u2192 Tile \u2192 Segmentation \u2192 Merge \u2192 Export \u2192 3DTiles \u2192 Exports (including child tilesets)",
+    "annotation": "Full pipeline workflow for Galaxy EU: Collection Check \u2192 Standardization \u2192 Exports \u2192 Overviews \u2192 Exports \u2192 Tile \u2192 Segmentation \u2192 Merge \u2192 Export \u2192 Potree \u2192 Exports",
     "comments": [],
     "creator": [
         {
@@ -617,8 +617,8 @@
             "workflow_outputs": []
         },
         "14": {
-            "annotation": "Convert segmented collection to single merged 3D Tiles tileset",
-            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_py3dtiles/3dtrees_py3dtiles/1.1.0+galaxy1",
+            "annotation": "Convert segmented collection to Potree octree format",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_potree/3dtrees_potree/1.0.0+galaxy0",
             "errors": null,
             "id": 14,
             "input_connections": {
@@ -628,24 +628,12 @@
                 }
             },
             "inputs": [],
-            "label": "3D Trees Py3DTiles Converter",
-            "name": "3Dtrees: Py3DTiles Converter",
+            "label": "3Dtrees: Potree Converter",
+            "name": "3Dtrees: Potree Converter",
             "outputs": [
                 {
-                    "name": "points_tiles",
+                    "name": "potree_output",
                     "type": "input"
-                },
-                {
-                    "name": "child_tilesets",
-                    "type": "input"
-                },
-                {
-                    "name": "tileset_json",
-                    "type": "json"
-                },
-                {
-                    "name": "preview_pnts",
-                    "type": "pnts"
                 }
             ],
             "position": {
@@ -653,30 +641,30 @@
                 "top": 240
             },
             "post_job_actions": {},
-            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_py3dtiles/3dtrees_py3dtiles/1.1.0+galaxy1",
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_potree/3dtrees_potree/1.0.0+galaxy0",
             "tool_shed_repository": {
-                "changeset_revision": "ecbb700489af",
-                "name": "3dtrees_py3dtiles",
+                "changeset_revision": "3104b1edd779",
+                "name": "3dtrees_potree",
                 "owner": "bgruening",
                 "tool_shed": "toolshed.g2.bx.psu.edu"
             },
-            "tool_state": "{\"extra_fields\": \"PredInstance\", \"input\": {\"__class__\": \"ConnectedValue\"}, \"overwrite\": false, \"srs_out\": \"4978\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
+            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"encoding\": \"BROTLI\", \"method\": \"poisson\", \"attributes\": \"rgb,intensity,classification,PredInstance\", \"keep_chunks\": false, \"no_chunking\": false, \"no_indexing\": false, \"generate_page\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
             "tool_uuid": null,
-            "tool_version": "1.1.0+galaxy1",
+            "tool_version": "1.0.0+galaxy0",
             "type": "tool",
             "uuid": "620d39f9-142f-4636-84ae-81bff61eaafb",
             "when": null,
             "workflow_outputs": []
         },
         "15": {
-            "annotation": "export_points_tiles: Export points tiles to S3 3dtiles/points/ subdirectory",
+            "annotation": "export_potree: Export potree metadata + octree to S3 visualization bucket",
             "content_id": "export_remote",
             "errors": null,
             "id": 15,
             "input_connections": {
                 "export_type|incollection": {
                     "id": 14,
-                    "output_name": "points_tiles"
+                    "output_name": "potree_output"
                 }
             },
             "inputs": [
@@ -685,7 +673,7 @@
                     "name": "export_type"
                 }
             ],
-            "label": "Export Points Tiles",
+            "label": "Export Potree Output",
             "name": "Export datasets",
             "outputs": [
                 {
@@ -699,128 +687,11 @@
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/3dtiles/points/\", \"export_type\": {\"export_type_selector\": \"collection_auto\", \"__current_case__\": 1, \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"include_metadata_files\": false, \"invalid_chars\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
+            "tool_state": "{\"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/potree/\", \"export_type\": {\"export_type_selector\": \"collection_auto\", \"__current_case__\": 1, \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"include_metadata_files\": false, \"invalid_chars\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
             "tool_uuid": null,
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "67470c3f-2429-45ea-987b-ed2ea48c9909",
-            "when": null,
-            "workflow_outputs": []
-        },
-        "16": {
-            "annotation": "export_child_tilesets: Export child tileset JSON files to S3 3dtiles/points/ subdirectory",
-            "content_id": "export_remote",
-            "errors": null,
-            "id": 16,
-            "input_connections": {
-                "export_type|incollection": {
-                    "id": 14,
-                    "output_name": "child_tilesets"
-                }
-            },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool Export datasets",
-                    "name": "export_type"
-                }
-            ],
-            "label": "Export Child Tilesets",
-            "name": "Export datasets",
-            "outputs": [
-                {
-                    "name": "out",
-                    "type": "txt"
-                }
-            ],
-            "position": {
-                "left": 2010,
-                "top": 260
-            },
-            "post_job_actions": {},
-            "tool_id": "export_remote",
-            "tool_state": "{\"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/3dtiles/points/\", \"export_type\": {\"export_type_selector\": \"collection_auto\", \"__current_case__\": 1, \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"include_metadata_files\": false, \"invalid_chars\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
-            "tool_version": "0.1.0",
-            "type": "tool",
-            "uuid": "a8f4c2d1-3b5e-4a9f-8c7d-6e2f1a0b9c8d",
-            "when": null,
-            "workflow_outputs": []
-        },
-        "17": {
-            "annotation": "export_tileset: Export tileset.json to S3 3dtiles/",
-            "content_id": "export_remote",
-            "errors": null,
-            "id": 17,
-            "input_connections": {
-                "export_type|infiles": {
-                    "id": 14,
-                    "output_name": "tileset_json"
-                }
-            },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool Export datasets",
-                    "name": "export_type"
-                }
-            ],
-            "label": "Export Tileset JSON",
-            "name": "Export datasets",
-            "outputs": [
-                {
-                    "name": "out",
-                    "type": "txt"
-                }
-            ],
-            "position": {
-                "left": 2010,
-                "top": 450
-            },
-            "post_job_actions": {},
-            "tool_id": "export_remote",
-            "tool_state": "{\"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/3dtiles/\", \"export_type\": {\"export_type_selector\": \"datasets_auto\", \"__current_case__\": 0, \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"include_metadata_files\": false, \"invalid_chars\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
-            "tool_version": "0.1.0",
-            "type": "tool",
-            "uuid": "152176d1-9b35-41c6-af9d-318a9f6b63af",
-            "when": null,
-            "workflow_outputs": []
-        },
-        "18": {
-            "annotation": "export_preview: Export preview.pnts to S3 3dtiles/",
-            "content_id": "export_remote",
-            "errors": null,
-            "id": 18,
-            "input_connections": {
-                "export_type|infiles": {
-                    "id": 14,
-                    "output_name": "preview_pnts"
-                }
-            },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool Export datasets",
-                    "name": "export_type"
-                }
-            ],
-            "label": "Export Preview PNTS",
-            "name": "Export datasets",
-            "outputs": [
-                {
-                    "name": "out",
-                    "type": "txt"
-                }
-            ],
-            "position": {
-                "left": 2010,
-                "top": 620
-            },
-            "post_job_actions": {},
-            "tool_id": "export_remote",
-            "tool_state": "{\"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/3dtiles/\", \"export_type\": {\"export_type_selector\": \"datasets_auto\", \"__current_case__\": 0, \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"include_metadata_files\": false, \"invalid_chars\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
-            "tool_version": "0.1.0",
-            "type": "tool",
-            "uuid": "de4a34b8-d119-4760-a2ca-4639d9110902",
             "when": null,
             "workflow_outputs": []
         }
@@ -832,7 +703,7 @@
         "Standardization",
         "Overviews",
         "TileMerge",
-        "3DTiles",
+        "Potree",
         "S3Export"
     ],
     "uuid": "6e4e7d5a-b3f5-4163-9b2d-8df5bdb77797",

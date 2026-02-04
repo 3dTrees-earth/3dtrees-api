@@ -206,10 +206,7 @@ WORKFLOW_EXPORT_ANNOTATIONS = {
         "export_top_views": "{s3_base_path}overviews/",
         "export_section_views": "{s3_base_path}overviews/",
         "export_segmented_laz": "{s3_base_path}segmentation/",
-        "export_tileset": "{s3_base_path}3dtiles/",
-        "export_preview": "{s3_base_path}3dtiles/",
-        "export_points_tiles": "{s3_base_path}3dtiles/points/",
-        "export_child_tilesets": "{s3_base_path}3dtiles/points/"
+        "export_potree": "{s3_base_path}potree/"
     }
 }
 
@@ -499,7 +496,7 @@ def build_workflow_parameters(
     file_source_visualization = galaxy_client.config.file_source_visualization
     file_source_scheme = galaxy_client.config.file_source_scheme
     
-    # Exports that should go to visualization bucket (overviews and 3dtiles)
+    # Exports that should go to visualization bucket (overviews, 3dtiles, potree)
     visualization_exports = {
         "export_top_views",
         "export_section_views",
@@ -508,6 +505,7 @@ def build_workflow_parameters(
         "export_preview",
         "export_points_tiles",
         "export_child_tilesets",
+        "export_potree",
     }
     
     # Get s3_base_path from galaxy_histories or fall back to default

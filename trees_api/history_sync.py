@@ -91,10 +91,10 @@ EXPECTED_OUTPUTS = {
         "segmentation": [
             "segmented.laz"
         ],
-        "3dtiles": [
-            "tileset.json",
-            "preview.pnts",
-            "points/"
+        "potree": [
+            "metadata.json",
+            "hierarchy.bin",
+            "octree.bin"
         ]
     }
 }
@@ -115,6 +115,8 @@ def build_outputs_structure(
     - 3dtiles outputs: CONSOLIDATED per dataset (no item_id)
       - Final path: {s3_base_path}3dtiles/{filename}
       - All items are merged into a single 3D Tiles tileset
+    - potree outputs: CONSOLIDATED per dataset (no item_id)
+      - Final path: {s3_base_path}potree/{filename}
     
     Args:
         workflow_name: Name of the workflow
@@ -127,7 +129,7 @@ def build_outputs_structure(
     expected = EXPECTED_OUTPUTS.get(workflow_name, {})
     
     # Product types that are consolidated per dataset (not per item)
-    CONSOLIDATED_PRODUCTS = {"3dtiles"}
+    CONSOLIDATED_PRODUCTS = {"3dtiles", "potree"}
     
     outputs = {}
     
