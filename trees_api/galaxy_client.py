@@ -58,7 +58,7 @@ class GalaxyClient:
         self.email = config.email
         self.password = config.password
         self.admin_key = config.admin_key
-        self.workflows_path = config.workflows_path
+        self.workflows_path = config.resolved_workflows_path()
         
         self.workflow_registry: Dict[str, str] = {}
         self.gi: Optional[GalaxyObjectsInstance] = None

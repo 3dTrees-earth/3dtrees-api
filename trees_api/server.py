@@ -1,5 +1,7 @@
 import os
 import json
+import sys
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
 import logging
@@ -20,6 +22,27 @@ from trees_api.supabase_log_handler import setup_supabase_logging
 
 
 logger = logging.getLogger("uvicorn")
+
+APP_START_TIME = datetime.now(timezone.utc)
+
+
+def _get_env_first(*names: str) -> Optional[str]:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return None
+
+
+def _get_package_version() -> Optional[str]:
+    try:
+        from importlib import metadata
+    except Exception:
+        return None
+    try:
+        return metadata.version("3dtrees-api")
+    except Exception:
+        return None
 
 # Global connection manager instance (will be initialized in lifespan)
 connection_manager: Optional[ConnectionManager] = None
@@ -230,6 +253,45 @@ def health_check():
         "status": "healthy" if all_connected else "degraded",
         "services": status,
         "message": "All services operational" if all_connected else "Some services are unavailable"
+    }
+
+
+@app.get("/version")
+def version_info():
+    """
+    Version and runtime metadata for debugging deployments.
+    """
+    git_sha = _get_env_first("GIT_SHA", "GIT_COMMIT", "COMMIT_SHA", "SOURCE_VERSION", "BUILD_SHA")
+    build_time = _get_env_first("BUILD_TIME", "BUILD_DATE", "SOURCE_DATE_EPOCH")
+    image_tag = _get_env_first("IMAGE_TAG", "DOCKER_IMAGE_TAG", "RELEASE_TAG")
+    deploy_env = _get_env_first("DEPLOY_ENV", "ENVIRONMENT", "APP_ENV")
+
+    uptime_seconds = int((datetime.now(timezone.utc) - APP_START_TIME).total_seconds())
+
+    workflows_path = None
+    workflow_registry = None
+    if connection_manager:
+        galaxy_client = connection_manager.get_galaxy_client()
+        if galaxy_client:
+            workflows_path = str(galaxy_client.workflows_path)
+            registry = galaxy_client.get_available_workflow_files()
+            workflow_registry = {
+                "count": len(registry),
+                "workflows": sorted(registry.keys()),
+            }
+
+    return {
+        "api_version": _get_env_first("API_VERSION", "APP_VERSION") or _get_package_version(),
+        "git_sha": git_sha,
+        "git_sha_short": git_sha[:7] if git_sha else None,
+        "build_time": build_time,
+        "image_tag": image_tag,
+        "environment": deploy_env,
+        "python_version": sys.version.split()[0],
+        "started_at": APP_START_TIME.isoformat(),
+        "uptime_seconds": uptime_seconds,
+        "workflows_path": workflows_path,
+        "workflow_registry": workflow_registry,
     }
 
 

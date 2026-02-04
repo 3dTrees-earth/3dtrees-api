@@ -30,9 +30,17 @@ class GalaxyConfig(BaseSettings):
     email: Optional[str] = Field(default='processor@3dtrees.earth', description="Galaxy user email")
     password: Optional[str] = Field(default=None, description="Galaxy user password")
     admin_key: Optional[str] = Field(default=None, description="Galaxy admin key")
-    workflows_path: Path = Field(
+    workflows_path: Optional[Path] = Field(
+        default=None,
+        description="Override path to workflow files"
+    )
+    workflows_path_dev: Path = Field(
         default_factory=lambda: Path(__file__).parent / "workflows",
-        description="Path to workflow files"
+        description="Path to development workflow files"
+    )
+    workflows_path_prod: Path = Field(
+        default_factory=lambda: Path(__file__).parent / "workflows_prod",
+        description="Path to production workflow files"
     )
     
     # File source configuration for S3 bucket access
@@ -81,6 +89,17 @@ class GalaxyConfig(BaseSettings):
     def is_galaxy_eu(self) -> bool:
         """Check if configured for Galaxy EU (vs local Galaxy)."""
         return "usegalaxy.eu" in self.url or self.file_source_scheme == "gxuserfiles"
+
+    def resolved_workflows_path(self) -> Path:
+        """
+        Resolve the workflow directory based on environment.
+
+        Uses explicit GALAXY_WORKFLOWS_PATH if set; otherwise, chooses
+        a production or development workflow directory.
+        """
+        if self.workflows_path:
+            return self.workflows_path
+        return self.workflows_path_prod if self.is_galaxy_eu else self.workflows_path_dev
 
 
 class SupabaseConfig(BaseSettings):
