@@ -98,25 +98,42 @@ def _get_expected_tool_step_uuids(
     return expected_step_uuids
 
 
-def _build_step_state_map(galaxy_inv: Dict) -> Dict[str, str]:
-    return {
-        step.get("workflow_step_uuid"): step.get("state")
-        for step in galaxy_inv.get("steps", [])
-        if step.get("workflow_step_uuid")
-    }
+def _build_step_terminal_map(galaxy_inv: Dict, jobs: List[Dict]) -> Dict[str, bool]:
+    job_state_by_id = {job.get("id"): job.get("state") for job in jobs if job.get("id")}
+    step_terminal = {}
+
+    for step in galaxy_inv.get("steps", []):
+        step_uuid = step.get("workflow_step_uuid")
+        if not step_uuid:
+            continue
+
+        step_state = step.get("state")
+        is_terminal = step_state in TERMINAL_STEP_STATES
+
+        job_id = step.get("job_id")
+        if job_id and job_state_by_id.get(job_id) in TERMINAL_JOB_STATES:
+            is_terminal = True
+
+        step_jobs = step.get("jobs", [])
+        if step_jobs:
+            is_terminal = all(j.get("state") in TERMINAL_JOB_STATES for j in step_jobs)
+
+        step_terminal[step_uuid] = is_terminal
+
+    return step_terminal
 
 
-def _all_expected_steps_terminal(expected_step_uuids: set, step_states: Dict[str, str]) -> bool:
+def _all_expected_steps_terminal(expected_step_uuids: set, step_terminal_map: Dict[str, bool]) -> bool:
     if not expected_step_uuids:
         return False
-    return all(step_states.get(step_uuid) in TERMINAL_STEP_STATES for step_uuid in expected_step_uuids)
+    return all(step_terminal_map.get(step_uuid) is True for step_uuid in expected_step_uuids)
 
 
 def _determine_workflow_completion(
     galaxy_status: str,
     jobs: List[Dict],
     expected_step_uuids: set,
-    step_states: Dict[str, str],
+    step_terminal_map: Dict[str, bool],
     invocation_id: str
 ) -> tuple[bool, Optional[str], bool]:
     if galaxy_status in TERMINAL_WORKFLOW_STATES:
@@ -128,7 +145,7 @@ def _determine_workflow_completion(
         return False, None, False
 
     all_jobs_terminal = all(j.get('state') in TERMINAL_JOB_STATES for j in jobs)
-    all_expected_steps_terminal = _all_expected_steps_terminal(expected_step_uuids, step_states)
+    all_expected_steps_terminal = _all_expected_steps_terminal(expected_step_uuids, step_terminal_map)
 
     if all_jobs_terminal and all_expected_steps_terminal:
         error_jobs = [j for j in jobs if j.get('state') in ERROR_JOB_STATES]
@@ -233,20 +250,20 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
                 jobs = galaxy_inv.get('jobs', [])
 
                 expected_step_uuids = set()
-                step_states: Dict[str, str] = {}
+                step_terminal_map: Dict[str, bool] = {}
                 if galaxy_status not in TERMINAL_WORKFLOW_STATES:
                     expected_step_uuids = _get_expected_tool_step_uuids(
                         galaxy_client,
                         supabase_inv.workflow_name,
                         expected_tool_steps,
                     )
-                    step_states = _build_step_state_map(galaxy_inv)
+                    step_terminal_map = _build_step_terminal_map(galaxy_inv, jobs)
 
                 workflow_finished, final_status, all_expected_steps_terminal = _determine_workflow_completion(
                     galaxy_status,
                     jobs,
                     expected_step_uuids,
-                    step_states,
+                    step_terminal_map,
                     supabase_inv.invocation_id,
                 )
 
