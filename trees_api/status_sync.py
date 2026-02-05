@@ -10,7 +10,7 @@ When workflows fail, this module also creates Linear issues automatically
 import json
 import logging
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from trees_api.galaxy_client import GalaxyClient
 from trees_api.supabase_client import SupabaseClient
@@ -52,6 +52,9 @@ TERMINAL_JOB_STATES = {'ok', 'error', 'failed', 'cancelled'}
 ERROR_JOB_STATES = {'error', 'failed'}
 RUNNING_JOB_STATES = {'new', 'queued', 'running'}
 TERMINAL_STEP_STATES = {'ok', 'error', 'failed', 'cancelled', 'skipped', 'deleted', 'discarded'}
+
+# How long to wait before discarding invocations missing in Galaxy
+MISSING_INVOCATION_DISCARD_AFTER = timedelta(hours=24)
 
 
 def _map_galaxy_status(galaxy_status: str) -> str:
@@ -162,6 +165,20 @@ def _determine_workflow_completion(
     return False, None, all_expected_steps_terminal
 
 
+def _should_discard_missing_invocation(supabase_inv) -> bool:
+    if supabase_inv.status in TERMINAL_WORKFLOW_STATES:
+        return False
+    if supabase_inv.dataset_id is not None:
+        return False
+    created_at = supabase_inv.created_at
+    if not created_at:
+        return False
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - created_at
+    return age >= MISSING_INVOCATION_DISCARD_AFTER
+
+
 def _extract_outputs_from_jobs(galaxy_client: GalaxyClient, jobs: List[Dict]) -> tuple[Dict, Dict]:
     for job_data in jobs:
         if job_data.get('state') == 'ok' and job_data.get('id'):
@@ -241,6 +258,17 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
                 galaxy_inv = galaxy_lookup.get(supabase_inv.invocation_id)
                 if not galaxy_inv:
                     logger.warning(f"Galaxy invocation {supabase_inv.invocation_id} not found")
+                    if _should_discard_missing_invocation(supabase_inv):
+                        stats['status_updated'] += 1
+                        supabase_client.update_workflow_invocation(
+                            supabase_inv.invocation_id,
+                            status="discarded",
+                            finished_at=datetime.now(timezone.utc),
+                        )
+                        logger.info(
+                            f"Discarded missing invocation {supabase_inv.invocation_id} "
+                            f"(created_at={supabase_inv.created_at})"
+                        )
                     continue
 
                 update_data = {}
