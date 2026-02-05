@@ -100,6 +100,76 @@ EXPECTED_OUTPUTS = {
 }
 
 
+# Potree files that Galaxy exports with wrong extension
+# Galaxy uses .binary extension instead of .bin required by Potree viewer
+POTREE_FILE_RENAMES = {
+    "hierarchy.binary": "hierarchy.bin",
+    "octree.binary": "octree.bin",
+}
+
+
+def fix_potree_file_extensions(
+    storage_client: StorageClient,
+    storage_config: StorageConfig,
+    s3_base_path: str
+) -> Dict[str, bool]:
+    """
+    Rename potree files from .binary to .bin extension.
+    
+    Galaxy outputs potree files with .binary extension due to its datatype system,
+    but the Potree viewer expects .bin extension.
+    
+    Args:
+        storage_client: Connected storage client
+        storage_config: Storage configuration (for visualization bucket)
+        s3_base_path: Base S3 path (e.g., "324/")
+        
+    Returns:
+        Dict mapping filename to success status
+    """
+    results = {}
+    potree_path = f"{s3_base_path}potree/"
+    
+    for old_name, new_name in POTREE_FILE_RENAMES.items():
+        old_key = f"{potree_path}{old_name}"
+        new_key = f"{potree_path}{new_name}"
+        
+        # Check if .binary file exists and .bin doesn't
+        try:
+            binary_exists = storage_client.file_exists(
+                old_key, bucket=storage_config.bucket_name_visualization
+            )
+            bin_exists = storage_client.file_exists(
+                new_key, bucket=storage_config.bucket_name_visualization
+            )
+            
+            if binary_exists and not bin_exists:
+                # Rename .binary to .bin
+                success = storage_client.rename_object(
+                    old_key, new_key,
+                    bucket=storage_config.bucket_name_visualization
+                )
+                results[old_name] = success
+                if success:
+                    logger.info(f"Renamed potree file: {old_key} -> {new_key}")
+                else:
+                    logger.warning(f"Failed to rename potree file: {old_key}")
+            elif bin_exists:
+                # .bin already exists, no action needed
+                results[old_name] = True
+                logger.debug(f"Potree file already has correct extension: {new_key}")
+            else:
+                # Neither exists
+                results[old_name] = False
+                logger.debug(f"Potree file not found: {old_key}")
+                
+        except Exception as e:
+            logger.warning(f"Error checking/renaming potree file {old_name}: {e}")
+            results[old_name] = False
+    
+    return results
+
+
 def build_outputs_structure(
     workflow_name: str,
     s3_base_path: str,
@@ -459,6 +529,18 @@ def sync_history_for_invocation(
         
         # Build outputs structure from deterministic paths
         outputs = build_outputs_structure(workflow_name, s3_base_path, item_ids)
+        
+        # Fix potree file extensions (.binary -> .bin) for Galaxy EU workflows
+        # Galaxy exports files with .binary extension, but Potree viewer expects .bin
+        if workflow_name == "EndToEndPipeline-GalaxyEU" and "potree" in outputs:
+            logger.info(f"Fixing potree file extensions for dataset {dataset_id}")
+            rename_results = fix_potree_file_extensions(
+                storage_client, storage_config, s3_base_path
+            )
+            if all(rename_results.values()):
+                logger.info(f"Potree files renamed successfully: {rename_results}")
+            else:
+                logger.warning(f"Some potree files could not be renamed: {rename_results}")
         
         # Optionally ingest metadata JSON files
         outputs = ingest_metadata_json(

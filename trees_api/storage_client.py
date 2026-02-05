@@ -121,6 +121,41 @@ class StorageClient:
             with open(tmp.name, 'r') as f:
                 return json.load(f)
 
+    def rename_object(self, old_key: str, new_key: str, bucket: Optional[str] = None) -> bool:
+        """
+        Rename an object in S3 (copy + delete).
+        
+        Args:
+            old_key: Source key
+            new_key: Destination key
+            bucket: Bucket name (defaults to products bucket)
+            
+        Returns:
+            True if rename was successful
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to storage service. Call connect() first.")
+        bucket_name = bucket or self.bucket_name_products
+        
+        try:
+            # Copy object to new key
+            copy_source = {'Bucket': bucket_name, 'Key': old_key}
+            self.client.copy_object(
+                CopySource=copy_source,
+                Bucket=bucket_name,
+                Key=new_key
+            )
+            
+            # Delete old object
+            self.client.delete_object(Bucket=bucket_name, Key=old_key)
+            
+            logger.info(f"Renamed {old_key} -> {new_key} in {bucket_name}")
+            return True
+            
+        except ClientError as e:
+            logger.error(f"Failed to rename {old_key} -> {new_key}: {e}")
+            return False
+
 
 class UploaderStorageClient:
     """S3/MinIO storage client for uploads.
