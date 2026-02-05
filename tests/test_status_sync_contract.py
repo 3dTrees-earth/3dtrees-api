@@ -1,15 +1,25 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from trees_api.models import WorkflowInvocation, WorkflowName
 from trees_api.status_sync import MISSING_INVOCATION_DISCARD_AFTER, sync_workflow_statuses
 
 
 class DummyGalaxyClient:
-    def __init__(self, workflow_structure, invocations):
+    def __init__(self, workflow_structure, invocations, file_raises=None):
         self._workflow_structure = workflow_structure
         self._invocations = invocations
+        self._file_raises = file_raises
+        # Required attributes for logging
+        self.workflows_path = Path("/mock/workflows")
+        self.workflow_registry = {"EndToEndPipeline-GalaxyEU": "mock-uuid"}
 
     def get_workflow_structure(self, workflow_name: str):
+        return self._workflow_structure
+
+    def get_workflow_structure_from_file(self, workflow_name: str):
+        if self._file_raises:
+            raise self._file_raises
         return self._workflow_structure
 
     def get_workflow_invocations(self, invocation_ids=None):
@@ -122,4 +132,81 @@ def test_missing_invocation_discarded_when_stale():
     update = supabase_client.updated.get(invocation_id)
     assert update is not None
     assert update["status"] == "discarded"
+    assert "finished_at" in update
+
+
+def test_galaxy_eu_scenario_completes_with_invocation_fallback():
+    """
+    Contract test: Galaxy EU scenario where:
+    - Galaxy API returns uuid=None for all workflow steps
+    - File lookup fails (simulating container without .ga files)
+    - But invocation steps have workflow_step_uuid and all jobs are ok
+    
+    The invocation-based fallback should correctly complete the workflow.
+    This is the exact scenario from issue 3DT-621.
+    """
+    invocation_id = "707a630ece75c892"
+    supabase_inv = WorkflowInvocation(
+        id=3,
+        invocation_id=invocation_id,
+        dataset_id=300,
+        workflow_name=WorkflowName.ENDTOEND_GALAXY_EU,
+        status="scheduled",
+        created_at=datetime.now(timezone.utc),
+        steps=[],
+        inputs={},
+        outputs={},
+        output_collections={},
+        jobs=[],
+        messages=[],
+        parameters={},
+    )
+
+    # Galaxy API returns uuid=None for all steps (Galaxy EU behavior)
+    workflow_structure = {
+        "steps": {
+            "1": {"uuid": None, "tool_id": "3dtrees_standardization", "type": "tool"},
+            "2": {"uuid": None, "tool_id": "3dtrees_standardization", "type": "tool"},
+            "3": {"uuid": None, "tool_id": "3dtrees_smart_tile", "type": "tool"},
+        }
+    }
+
+    # All 3 jobs are ok, all steps have workflow_step_uuid
+    galaxy_inv = {
+        "id": invocation_id,
+        "state": "scheduled",  # Galaxy EU never updates this
+        "jobs": [
+            {"id": "job-1", "state": "ok"},
+            {"id": "job-2", "state": "ok"},
+            {"id": "job-3", "state": "ok"},
+        ],
+        "steps": [
+            {"workflow_step_uuid": "step-uuid-1", "state": "scheduled", "job_id": "job-1"},
+            {"workflow_step_uuid": "step-uuid-2", "state": "scheduled", "job_id": "job-2"},
+            {"workflow_step_uuid": "step-uuid-3", "state": "scheduled", "job_id": "job-3"},
+        ],
+        "inputs": {},
+        "messages": [],
+        "outputs": {},
+        "output_collections": {},
+    }
+
+    # File lookup fails (simulating container without .ga files)
+    galaxy_client = DummyGalaxyClient(
+        workflow_structure=workflow_structure,
+        invocations=[galaxy_inv],
+        file_raises=FileNotFoundError("Workflow file not found"),
+    )
+    supabase_client = DummySupabaseClient([supabase_inv])
+
+    stats = sync_workflow_statuses(galaxy_client, supabase_client)
+
+    # Should complete without errors
+    assert stats["errors"] == 0
+    assert stats["status_updated"] == 1
+
+    # Should mark as ok (all jobs terminal, fallback found step UUIDs)
+    update = supabase_client.updated.get(invocation_id)
+    assert update is not None
+    assert update["status"] == "ok", f"Expected 'ok', got {update['status']}"
     assert "finished_at" in update

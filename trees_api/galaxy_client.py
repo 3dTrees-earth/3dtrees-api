@@ -512,6 +512,17 @@ class GalaxyClient:
         # self.gi.gi is the underlying bioblend.galaxy.GalaxyInstance
         workflow_dict = self.gi.gi.workflows.show_workflow(workflow.id)
         return workflow_dict
+
+    def get_workflow_structure_from_file(self, workflow_name: str) -> Dict[str, Any]:
+        """
+        Load workflow structure directly from the local .ga file.
+        
+        This is used as a fallback when Galaxy's API response is missing step UUIDs.
+        """
+        workflow_uuid = self.get_workflow_uuid(workflow_name)
+        workflow_path = self._find_workflow_file_by_uuid(workflow_uuid)
+        with open(workflow_path, "r") as f:
+            return json.load(f)
     
     def get_workflow_info(self, workflow_name: str) -> Workflow:
         """

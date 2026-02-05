@@ -77,25 +77,122 @@ def _map_galaxy_status(galaxy_status: str) -> str:
     return 'ready'
 
 
+def _extract_step_uuids_from_workflow_def(workflow_def: Dict) -> set:
+    """Extract tool step UUIDs from a workflow definition (.ga file or API response)."""
+    uuids = {
+        step.get("uuid")
+        for step in workflow_def.get("steps", {}).values()
+        if step.get("tool_id") and step.get("type") != "data_input"
+    }
+    return {uuid for uuid in uuids if uuid}
+
+
+def _extract_step_uuids_from_invocation(galaxy_inv: Dict) -> set:
+    """
+    Extract tool step UUIDs from invocation steps.
+    
+    This is a safe fallback when both Galaxy API and file-based lookup fail.
+    The invocation always has workflow_step_uuid for each step.
+    
+    We only include steps that have jobs (tool steps that have been scheduled),
+    filtering out input steps and steps that haven't been scheduled yet.
+    """
+    steps = galaxy_inv.get("steps", [])
+    tool_step_uuids = set()
+    
+    for step in steps:
+        step_uuid = step.get("workflow_step_uuid")
+        # Include if step has a job_id or jobs array (indicates it's a scheduled tool step)
+        has_job = step.get("job_id") or step.get("jobs")
+        if step_uuid and has_job:
+            tool_step_uuids.add(step_uuid)
+    
+    return tool_step_uuids
+
+
 def _get_expected_tool_step_uuids(
     galaxy_client: GalaxyClient,
     workflow_name: str,
-    cache: Dict[str, set]
+    cache: Dict[str, set],
+    galaxy_inv: Optional[Dict] = None
 ) -> set:
+    """
+    Get expected tool step UUIDs for a workflow.
+    
+    Tries in order:
+    1. Galaxy API (get_workflow_structure)
+    2. Local .ga file (get_workflow_structure_from_file)
+    3. Invocation steps (fallback when both above fail)
+    
+    Args:
+        galaxy_client: Connected Galaxy client
+        workflow_name: Name of the workflow
+        cache: Cache dict to avoid repeated lookups
+        galaxy_inv: Optional invocation dict for fallback extraction
+    
+    Returns:
+        Set of expected tool step UUIDs
+    """
     expected_step_uuids = cache.get(workflow_name)
     if expected_step_uuids is not None:
         return expected_step_uuids
 
+    source = "unknown"
+    
     try:
+        # Method 1: Try Galaxy API
         workflow_def = galaxy_client.get_workflow_structure(workflow_name)
-        expected_step_uuids = {
-            step.get("uuid")
-            for step in workflow_def.get("steps", {}).values()
-            if step.get("tool_id") and step.get("type") != "data_input"
-        }
+        expected_step_uuids = _extract_step_uuids_from_workflow_def(workflow_def)
+        if expected_step_uuids:
+            source = "galaxy_api"
+        else:
+            # Method 2: Try local .ga file
+            logger.debug(
+                f"Galaxy API returned no step UUIDs for {workflow_name}, "
+                f"trying file fallback at {galaxy_client.workflows_path}"
+            )
+            try:
+                workflow_def = galaxy_client.get_workflow_structure_from_file(workflow_name)
+                expected_step_uuids = _extract_step_uuids_from_workflow_def(workflow_def)
+                if expected_step_uuids:
+                    source = "local_file"
+                    logger.info(
+                        f"Resolved {len(expected_step_uuids)} step UUIDs from local file for {workflow_name}"
+                    )
+            except FileNotFoundError as fe:
+                logger.warning(
+                    f"Workflow file not found for {workflow_name}: {fe}. "
+                    f"workflows_path={galaxy_client.workflows_path}, "
+                    f"registry={list(galaxy_client.workflow_registry.keys())}"
+                )
+            except KeyError as ke:
+                logger.warning(
+                    f"Workflow not in registry for {workflow_name}: {ke}. "
+                    f"registry={list(galaxy_client.workflow_registry.keys())}"
+                )
     except Exception as e:
         expected_step_uuids = set()
         logger.warning(f"Unable to resolve workflow steps for {workflow_name}: {e}")
+
+    # Method 3: Fallback to invocation steps if still empty
+    if not expected_step_uuids and galaxy_inv:
+        expected_step_uuids = _extract_step_uuids_from_invocation(galaxy_inv)
+        if expected_step_uuids:
+            source = "invocation_fallback"
+            logger.info(
+                f"Using invocation-based fallback: {len(expected_step_uuids)} step UUIDs for {workflow_name}"
+            )
+
+    if expected_step_uuids:
+        logger.info(
+            f"Resolved {len(expected_step_uuids)} expected step UUIDs for {workflow_name} (source={source})"
+        )
+    else:
+        logger.warning(
+            f"No step UUIDs resolved for {workflow_name}. "
+            f"workflows_path={galaxy_client.workflows_path}, "
+            f"registry_count={len(galaxy_client.workflow_registry)}"
+        )
 
     cache[workflow_name] = expected_step_uuids
     return expected_step_uuids
@@ -284,6 +381,7 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
                         galaxy_client,
                         supabase_inv.workflow_name,
                         expected_tool_steps,
+                        galaxy_inv,  # Pass invocation for fallback extraction
                     )
                     step_terminal_map = _build_step_terminal_map(galaxy_inv, jobs)
 

@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from trees_api.status_sync import (
@@ -5,6 +6,7 @@ from trees_api.status_sync import (
     _build_step_terminal_map,
     _determine_workflow_completion,
     _extract_outputs_from_jobs,
+    _extract_step_uuids_from_invocation,
     _get_expected_tool_step_uuids,
     _map_galaxy_status,
     _update_steps_from_jobs,
@@ -20,13 +22,24 @@ class DummyJobsClient:
 
 
 class DummyGalaxyClient:
-    def __init__(self, workflow_structure=None, job=None):
+    def __init__(self, workflow_structure=None, workflow_structure_file=None, job=None,
+                 file_raises=None):
         self._workflow_structure = workflow_structure or {}
+        self._workflow_structure_file = workflow_structure_file or {}
+        self._file_raises = file_raises  # Exception to raise when get_workflow_structure_from_file is called
         if job is not None:
             self.gi = SimpleNamespace(jobs=DummyJobsClient(job))
+        # Required attributes for logging
+        self.workflows_path = Path("/mock/workflows")
+        self.workflow_registry = {"MockWorkflow": "mock-uuid"}
 
     def get_workflow_structure(self, name):
         return self._workflow_structure
+
+    def get_workflow_structure_from_file(self, name):
+        if self._file_raises:
+            raise self._file_raises
+        return self._workflow_structure_file
 
 
 def test_map_galaxy_status_unknown_defaults_to_ready():
@@ -149,8 +162,79 @@ def test_get_expected_tool_step_uuids_filters_non_tool_steps():
     }
     galaxy_client = DummyGalaxyClient(workflow_structure=workflow_structure)
     cache = {}
-    expected = _get_expected_tool_step_uuids(galaxy_client, "AnyWorkflow", cache)
+    expected = _get_expected_tool_step_uuids(galaxy_client, "AnyWorkflow", cache, galaxy_inv=None)
     assert expected == {"uuid-1", "uuid-4"}
+
+
+def test_get_expected_tool_step_uuids_falls_back_to_file():
+    workflow_structure = {
+        "steps": {
+            "1": {"uuid": None, "tool_id": "tool-x", "type": "tool"},
+            "2": {"uuid": None, "tool_id": "tool-y", "type": "tool"},
+        }
+    }
+    workflow_structure_file = {
+        "steps": {
+            "1": {"uuid": "uuid-1", "tool_id": "tool-x", "type": "tool"},
+            "2": {"uuid": "uuid-2", "tool_id": "tool-y", "type": "tool"},
+        }
+    }
+    galaxy_client = DummyGalaxyClient(
+        workflow_structure=workflow_structure,
+        workflow_structure_file=workflow_structure_file,
+    )
+    cache = {}
+    expected = _get_expected_tool_step_uuids(galaxy_client, "AnyWorkflow", cache, galaxy_inv=None)
+    assert expected == {"uuid-1", "uuid-2"}
+
+
+def test_get_expected_tool_step_uuids_falls_back_to_invocation():
+    """When both API and file fail, fallback to invocation steps."""
+    # API returns no UUIDs
+    workflow_structure = {
+        "steps": {
+            "1": {"uuid": None, "tool_id": "tool-x", "type": "tool"},
+            "2": {"uuid": None, "tool_id": "tool-y", "type": "tool"},
+        }
+    }
+    # File lookup raises FileNotFoundError
+    galaxy_client = DummyGalaxyClient(
+        workflow_structure=workflow_structure,
+        file_raises=FileNotFoundError("Workflow file not found"),
+    )
+    # Invocation has step UUIDs with jobs
+    galaxy_inv = {
+        "steps": [
+            {"workflow_step_uuid": "inv-uuid-1", "job_id": "job-1"},
+            {"workflow_step_uuid": "inv-uuid-2", "job_id": "job-2"},
+            {"workflow_step_uuid": "inv-uuid-3", "job_id": None},  # Input step, no job
+        ]
+    }
+    cache = {}
+    expected = _get_expected_tool_step_uuids(galaxy_client, "AnyWorkflow", cache, galaxy_inv=galaxy_inv)
+    # Should return only steps with jobs
+    assert expected == {"inv-uuid-1", "inv-uuid-2"}
+
+
+def test_extract_step_uuids_from_invocation():
+    """Test extracting step UUIDs from invocation steps."""
+    galaxy_inv = {
+        "steps": [
+            {"workflow_step_uuid": "uuid-1", "job_id": "job-1"},  # Tool step with job
+            {"workflow_step_uuid": "uuid-2", "jobs": [{"id": "job-2"}]},  # Tool step with jobs array
+            {"workflow_step_uuid": "uuid-3", "job_id": None},  # Input step, no job
+            {"workflow_step_uuid": None, "job_id": "job-4"},  # Missing UUID
+        ]
+    }
+    result = _extract_step_uuids_from_invocation(galaxy_inv)
+    assert result == {"uuid-1", "uuid-2"}
+
+
+def test_extract_step_uuids_from_invocation_empty():
+    """Test with no steps."""
+    galaxy_inv = {"steps": []}
+    result = _extract_step_uuids_from_invocation(galaxy_inv)
+    assert result == set()
 
 
 def test_extract_outputs_from_jobs_uses_first_ok_job():
