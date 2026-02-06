@@ -247,10 +247,14 @@ def _determine_workflow_completion(
 
     all_jobs_terminal = all(j.get('state') in TERMINAL_JOB_STATES for j in jobs)
     all_expected_steps_terminal = _all_expected_steps_terminal(expected_step_uuids, step_terminal_map)
+    error_jobs = [j for j in jobs if j.get('state') in ERROR_JOB_STATES]
+    paused_jobs = [j for j in jobs if j.get('state') in PAUSED_JOB_STATES]
+    has_failures = bool(error_jobs or paused_jobs)
 
-    if all_jobs_terminal and all_expected_steps_terminal:
-        error_jobs = [j for j in jobs if j.get('state') in ERROR_JOB_STATES]
-        paused_jobs = [j for j in jobs if j.get('state') in PAUSED_JOB_STATES]
+    # When all jobs are terminal and either all steps are terminal or there are
+    # failures (error/paused jobs cause downstream steps to stay in scheduled/new
+    # state forever - Galaxy never transitions them), the workflow is done.
+    if all_jobs_terminal and (all_expected_steps_terminal or has_failures):
         if error_jobs:
             paused_info = f", {len(paused_jobs)} paused (blocked)" if paused_jobs else ""
             logger.info(
