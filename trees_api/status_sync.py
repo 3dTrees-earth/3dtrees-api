@@ -48,10 +48,11 @@ GALAXY_STATUS_MAPPING = {
 TERMINAL_WORKFLOW_STATES = {
     'ok', 'success', 'error', 'failed', 'cancelled', 'deleted', 'discarded', 'warning'
 }
-TERMINAL_JOB_STATES = {'ok', 'error', 'failed', 'cancelled'}
+TERMINAL_JOB_STATES = {'ok', 'error', 'failed', 'cancelled', 'paused'}
 ERROR_JOB_STATES = {'error', 'failed'}
+PAUSED_JOB_STATES = {'paused'}
 RUNNING_JOB_STATES = {'new', 'queued', 'running'}
-TERMINAL_STEP_STATES = {'ok', 'error', 'failed', 'cancelled', 'skipped', 'deleted', 'discarded'}
+TERMINAL_STEP_STATES = {'ok', 'error', 'failed', 'cancelled', 'skipped', 'deleted', 'discarded', 'paused'}
 
 # How long to wait before discarding invocations missing in Galaxy
 MISSING_INVOCATION_DISCARD_AFTER = timedelta(hours=24)
@@ -249,9 +250,19 @@ def _determine_workflow_completion(
 
     if all_jobs_terminal and all_expected_steps_terminal:
         error_jobs = [j for j in jobs if j.get('state') in ERROR_JOB_STATES]
+        paused_jobs = [j for j in jobs if j.get('state') in PAUSED_JOB_STATES]
         if error_jobs:
+            paused_info = f", {len(paused_jobs)} paused (blocked)" if paused_jobs else ""
             logger.info(
-                f"Workflow {invocation_id} finished (job+step-based): {len(error_jobs)} failed jobs"
+                f"Workflow {invocation_id} finished (job+step-based): "
+                f"{len(error_jobs)} failed jobs{paused_info}"
+            )
+            return True, 'error', all_expected_steps_terminal
+        if paused_jobs and not error_jobs:
+            # All non-ok jobs are paused with no explicit errors - still a failure
+            logger.warning(
+                f"Workflow {invocation_id} has {len(paused_jobs)} paused jobs with no "
+                f"explicit errors - marking as error (paused jobs won't resume)"
             )
             return True, 'error', all_expected_steps_terminal
         logger.info(
@@ -396,9 +407,12 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
                 if not workflow_finished and jobs:
                     ok_count = sum(1 for j in jobs if j.get('state') == 'ok')
                     running_count = sum(1 for j in jobs if j.get('state') in RUNNING_JOB_STATES)
+                    error_count = sum(1 for j in jobs if j.get('state') in ERROR_JOB_STATES)
+                    paused_count = sum(1 for j in jobs if j.get('state') in PAUSED_JOB_STATES)
                     logger.debug(
                         f"Workflow {supabase_inv.invocation_id}: Galaxy state={galaxy_status}, "
-                        f"{ok_count}/{len(jobs)} jobs ok, {running_count} still running, "
+                        f"{ok_count}/{len(jobs)} jobs ok, {running_count} running, "
+                        f"{error_count} error, {paused_count} paused, "
                         f"expected_steps_terminal={all_expected_steps_terminal}"
                     )
 
@@ -515,18 +529,17 @@ def _create_linear_issue_for_failure(
         
         logger.info(f"Creating Linear issue for failed workflow {invocation_id} (dataset {dataset_id})")
         
-        # Collect detailed info for failed jobs
+        # Collect detailed info for failed and paused jobs
         failed_jobs: List[FailedJob] = []
+        paused_tool_names: List[str] = []
         
         for job in jobs:
             job_state = job.get('state', '')
+            tool_id = job.get('tool_id', '')
+            tool_name = tool_id.split("/")[-2] if "/" in tool_id else tool_id
+            
             if job_state in ['error', 'failed']:
                 job_id = job.get('id')
-                tool_id = job.get('tool_id', '')
-                
-                # Extract tool name from tool_id
-                # e.g., "toolshed.g2.bx.psu.edu/.../3dtrees_overviews/1.2.0" -> "3dtrees_overviews"
-                tool_name = tool_id.split("/")[-2] if "/" in tool_id else tool_id
                 
                 # Get detailed job info from Galaxy
                 if job_id:
@@ -551,10 +564,40 @@ def _create_linear_issue_for_failure(
                             stdout="",
                             job_messages=[],
                         ))
+            elif job_state == 'paused':
+                paused_tool_names.append(tool_name)
         
-        if not failed_jobs:
-            logger.warning(f"No failed jobs found for invocation {invocation_id}, skipping Linear issue")
+        if not failed_jobs and not paused_tool_names:
+            logger.warning(f"No failed or paused jobs found for invocation {invocation_id}, skipping Linear issue")
             return
+        
+        # If only paused jobs (no explicit errors), create a synthetic FailedJob entry
+        if not failed_jobs and paused_tool_names:
+            failed_jobs.append(FailedJob(
+                tool_id="unknown",
+                tool_name="unknown (paused)",
+                exit_code=None,
+                stderr=f"All blocked jobs are paused with no explicit error. "
+                       f"Paused tools: {', '.join(paused_tool_names)}",
+                stdout="",
+                job_messages=[],
+            ))
+        elif paused_tool_names and failed_jobs:
+            # Add paused job context to the last failed job's stderr for visibility
+            paused_note = (
+                f"\n\n--- Blocked downstream jobs ({len(paused_tool_names)}) ---\n"
+                f"The following tools were paused (blocked) due to upstream failures:\n"
+                + "\n".join(f"  - {name}" for name in paused_tool_names)
+            )
+            last_job = failed_jobs[-1]
+            failed_jobs[-1] = FailedJob(
+                tool_id=last_job.tool_id,
+                tool_name=last_job.tool_name,
+                exit_code=last_job.exit_code,
+                stderr=(last_job.stderr or "") + paused_note,
+                stdout=last_job.stdout,
+                job_messages=last_job.job_messages,
+            )
         
         # Create the Linear issue
         issue_id = linear_client.create_workflow_failure_issue(
