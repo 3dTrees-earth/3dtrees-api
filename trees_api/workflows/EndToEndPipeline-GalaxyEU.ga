@@ -1,6 +1,6 @@
 {
     "a_galaxy_workflow": "true",
-    "annotation": "Full pipeline workflow for Galaxy EU: Collection Check \u2192 Standardization \u2192 Exports \u2192 Overviews \u2192 Exports \u2192 Tile \u2192 Segmentation \u2192 Merge \u2192 Export \u2192 3DTiles \u2192 Exports (including child tilesets)",
+    "annotation": "Full pipeline workflow for Galaxy EU: Collection Check \u2192 Standardization \u2192 Exports \u2192 Overviews \u2192 Exports \u2192 SmartTile (Tile) \u2192 Segmentation \u2192 SmartTile (Merge) \u2192 Export \u2192 3DTiles \u2192 Exports (including child tilesets)",
     "comments": [],
     "creator": [
         {
@@ -354,22 +354,30 @@
         },
         "10": {
             "annotation": "Subsample and tile point cloud for segmentation",
-            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_tile_merge/3dtrees_tile_merge/1.0.3+galaxy0",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_smart_tile/3dtrees_smart_tile/1.0.1+galaxy0",
             "errors": null,
             "id": 10,
             "input_connections": {
-                "input": {
+                "operation|input_files": {
                     "id": 3,
                     "output_name": "pc_standardized"
                 }
             },
             "inputs": [],
-            "label": "3Dtrees: Tile",
-            "name": "3Dtrees: Tile and Merge",
+            "label": "3DTrees: SmartTile (Tile)",
+            "name": "3DTrees: SmartTile",
             "outputs": [
                 {
-                    "name": "output_tile",
-                    "type": "zip"
+                    "name": "Subsampled_Resolution_1",
+                    "type": "collection"
+                },
+                {
+                    "name": "Subsampled_Resolution_2",
+                    "type": "collection"
+                },
+                {
+                    "name": "output_png",
+                    "type": "png"
                 }
             ],
             "position": {
@@ -377,9 +385,9 @@
                 "top": 500
             },
             "post_job_actions": {},
-            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_tile_merge/3dtrees_tile_merge/1.0.3+galaxy0",
-            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"operation\": {\"task\": \"tile\", \"__current_case__\": 0}}",
-            "tool_version": "1.0.3+galaxy0",
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_smart_tile/3dtrees_smart_tile/1.0.1+galaxy0",
+            "tool_state": "{\"operation\": {\"task\": \"tile\", \"__current_case__\": 0, \"input_files\": {\"__class__\": \"ConnectedValue\"}, \"tile_length\": 300, \"til  e_buffer\": 20, \"resolution_1\": 0.01, \"resolution_2\": 0.1, \"skip_dimension_reduction\": true}}",
+            "tool_version": "1.0.1+galaxy0",
             "type": "tool",
             "uuid": "7b561a98-b8b3-4139-b986-a019663ea766",
             "when": null,
@@ -393,7 +401,7 @@
             "input_connections": {
                 "input": {
                     "id": 10,
-                    "output_name": "output_tile"
+                    "output_name": "Subsampled_Resolution_2"
                 }
             },
             "inputs": [],
@@ -402,7 +410,7 @@
             "outputs": [
                 {
                     "name": "output",
-                    "type": "zip"
+                    "type": "laz"
                 }
             ],
             "position": {
@@ -420,21 +428,33 @@
         },
         "12": {
             "annotation": "Merge segmented tiles back to original resolution",
-            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_tile_merge/3dtrees_tile_merge/1.0.3+galaxy0",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_smart_tile/3dtrees_smart_tile/1.0.1+galaxy0",
             "errors": null,
             "id": 12,
             "input_connections": {
-                "input": {
+                "operation|input_segmented": {
                     "id": 11,
                     "output_name": "output"
+                },
+                "operation|input_res1": {
+                    "id": 10,
+                    "output_name": "Subsampled_Resolution_1"
+                },
+                "operation|input_original": {
+                    "id": 3,
+                    "output_name": "pc_standardized"
                 }
             },
             "inputs": [],
-            "label": "3Dtrees: Merge",
-            "name": "3Dtrees: Tile and Merge",
+            "label": "3DTrees: SmartTile (Merge)",
+            "name": "3DTrees: SmartTile",
             "outputs": [
                 {
-                    "name": "output_merge",
+                    "name": "output_merge_tiles",
+                    "type": "collection"
+                },
+                {
+                    "name": "output_merged_laz",
                     "type": "laz"
                 }
             ],
@@ -443,9 +463,9 @@
                 "top": 500
             },
             "post_job_actions": {},
-            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_tile_merge/3dtrees_tile_merge/1.0.3+galaxy0",
-            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"operation\": {\"task\": \"merge\", \"__current_case__\": 1}}",
-            "tool_version": "1.0.3+galaxy0",
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_smart_tile/3dtrees_smart_tile/1.0.1+galaxy0",
+            "tool_state": "{\"operation\": {\"task\": \"merge\", \"__current_case__\": 1, \"input_segmented\": {\"__class__\": \"ConnectedValue\"}, \"input_res1\": {\"__class__\": \"ConnectedValue\"}, \"input_original\": {\"__class__\": \"ConnectedValue\"}, \"buffer\": 30.0, \"overlap_threshold\": 0.3, \"max_centroid_distance\": 3.0, \"correspondence_tolerance\": 0.05, \"max_volume_for_merge\": 4.0, \"min_cluster_size\": 300, \"border_zone_width\": 10.0, \"disable_matching\": false}}",
+            "tool_version": "1.0.1+galaxy0",
             "type": "tool",
             "uuid": "f858c2ed-b151-4dbf-862b-7839f600351f",
             "when": null,
@@ -459,7 +479,7 @@
             "input_connections": {
                 "export_type|incollection": {
                     "id": 12,
-                    "output_name": "output_merge"
+                    "output_name": "output_merge_tiles"
                 }
             },
             "inputs": [],
@@ -492,7 +512,7 @@
             "input_connections": {
                 "input": {
                     "id": 12,
-                    "output_name": "output_merge"
+                    "output_name": "output_merge_tiles"
                 }
             },
             "inputs": [],
@@ -669,5 +689,5 @@
         "S3Export"
     ],
     "uuid": "a237b937-642a-4301-b97f-0e11622dd700",
-    "version": 4
+    "version": 5
 }
