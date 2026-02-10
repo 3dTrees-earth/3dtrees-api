@@ -616,7 +616,16 @@ class GalaxyClient:
         logger.info(f"Workflow '{workflow_name}' not found, importing from {workflow_file_path}")
         return self.import_workflow(workflow_file_path)
     
-    def _invoke_workflow_by_uuid(self, workflow_uuid: str, inputs: Dict[str, Any], history_name: str = None, history_id: str = None) -> Dict[str, Any]:
+    def _invoke_workflow_by_uuid(
+        self,
+        workflow_uuid: str,
+        inputs: Dict[str, Any],
+        history_name: str = None,
+        history_id: str = None,
+        preferred_object_store_id: str = None,
+        preferred_intermediate_object_store_id: str = None,
+        preferred_outputs_object_store_id: str = None,
+    ) -> Dict[str, Any]:
         """
         Invoke a workflow by UUID (internal method).
         
@@ -625,6 +634,9 @@ class GalaxyClient:
             inputs: Dictionary of workflow inputs
             history_name: Optional name for creating a new history
             history_id: Optional existing Galaxy history ID to reuse
+            preferred_object_store_id: Optional object store ID for all datasets
+            preferred_intermediate_object_store_id: Optional object store for intermediate datasets
+            preferred_outputs_object_store_id: Optional object store for marked outputs
             
         Returns:
             Invocation data if successful
@@ -671,19 +683,26 @@ class GalaxyClient:
             else:
                 logger.warning(f"No parameters found in inputs dict")
             
-            # Invoke the workflow
-            invocation = workflow.invoke(
+            # Invoke via low-level API so we can pass object store preferences.
+            invocation_payload = self.gi.gi.workflows.invoke_workflow(
+                workflow_id=workflow.id,
                 inputs=inputs,
-                history=history,
-                params=inputs.get("parameters")  # Pass parameters separately
+                params=inputs.get("parameters"),  # Pass step params separately
+                history_id=history.id if history else None,
+                history_name=history_name if not history else None,
+                preferred_object_store_id=preferred_object_store_id,
+                preferred_intermediate_object_store_id=preferred_intermediate_object_store_id,
+                preferred_outputs_object_store_id=preferred_outputs_object_store_id,
             )
+            invocation_id = invocation_payload["id"]
+            invocation_state = invocation_payload.get("state")
             
-            logger.info(f"Successfully invoked workflow '{workflow.name}' (Invocation ID: {invocation.id})")
+            logger.info(f"Successfully invoked workflow '{workflow.name}' (Invocation ID: {invocation_id})")
             return {
-                "invocation_id": invocation.id,
+                "invocation_id": invocation_id,
                 "workflow_id": workflow.id,
                 "history_id": history.id if history else None,
-                "state": invocation.state
+                "state": invocation_state
             }
             
         except Exception as e:
@@ -711,7 +730,16 @@ class GalaxyClient:
         # Ensure workflow exists (will import if needed)
         return self._ensure_workflow_exists_by_uuid(workflow_uuid)
     
-    def invoke_workflow(self, workflow_name: str, inputs: Dict[str, Any], history_name: str = None, history_id: str = None) -> Dict[str, Any]:
+    def invoke_workflow(
+        self,
+        workflow_name: str,
+        inputs: Dict[str, Any],
+        history_name: str = None,
+        history_id: str = None,
+        preferred_object_store_id: str = None,
+        preferred_intermediate_object_store_id: str = None,
+        preferred_outputs_object_store_id: str = None,
+    ) -> Dict[str, Any]:
         """
         Invoke a workflow by name (user-facing method).
         
@@ -720,6 +748,9 @@ class GalaxyClient:
             inputs: Dictionary of workflow inputs
             history_name: Optional name for creating a new history
             history_id: Optional existing Galaxy history ID to reuse
+            preferred_object_store_id: Optional object store ID for all datasets
+            preferred_intermediate_object_store_id: Optional object store for intermediate datasets
+            preferred_outputs_object_store_id: Optional object store for marked outputs
             
         Returns:
             Invocation data if successful
@@ -735,7 +766,15 @@ class GalaxyClient:
         self.ensure_workflow_available(workflow_name)
         
         # Invoke by UUID
-        return self._invoke_workflow_by_uuid(workflow_uuid, inputs, history_name, history_id)
+        return self._invoke_workflow_by_uuid(
+            workflow_uuid,
+            inputs,
+            history_name,
+            history_id,
+            preferred_object_store_id=preferred_object_store_id,
+            preferred_intermediate_object_store_id=preferred_intermediate_object_store_id,
+            preferred_outputs_object_store_id=preferred_outputs_object_store_id,
+        )
     
     def prepare_workflow_inputs(self, workflow_name: str, dataset_id: str) -> Dict[str, Any]:
         """
@@ -860,7 +899,10 @@ class GalaxyClient:
         supabase_client,
         history_name: str = None,
         history_id: str = None,
-        parameters: Dict[str, Any] = None
+        parameters: Dict[str, Any] = None,
+        preferred_object_store_id: str = None,
+        preferred_intermediate_object_store_id: str = None,
+        preferred_outputs_object_store_id: str = None,
     ) -> Dict[str, Any]:
         """
         Invoke workflow with collection input from file sources.
@@ -873,6 +915,9 @@ class GalaxyClient:
             history_name: Optional name for creating a new history
             history_id: Optional existing Galaxy history ID to reuse
             parameters: Optional workflow step parameters (e.g., export paths)
+            preferred_object_store_id: Optional object store ID for all datasets
+            preferred_intermediate_object_store_id: Optional object store for intermediate datasets
+            preferred_outputs_object_store_id: Optional object store for marked outputs
             
         Returns:
             Invocation data if successful
@@ -895,7 +940,15 @@ class GalaxyClient:
         self.ensure_workflow_available(workflow_name)
         
         # Invoke workflow - Galaxy handles deferred fetch
-        return self.invoke_workflow(workflow_name, inputs, history_name, history_id)
+        return self.invoke_workflow(
+            workflow_name,
+            inputs,
+            history_name,
+            history_id,
+            preferred_object_store_id=preferred_object_store_id,
+            preferred_intermediate_object_store_id=preferred_intermediate_object_store_id,
+            preferred_outputs_object_store_id=preferred_outputs_object_store_id,
+        )
     
     def invoke_workflow_with_file_source(
         self, 

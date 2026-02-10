@@ -62,6 +62,21 @@ class GalaxyConfig(BaseSettings):
         default="gxfiles",
         description="URI scheme for file sources (gxfiles for local, gxuserfiles for Galaxy EU)"
     )
+    # Invocation storage preferences (optional). If set, these are passed
+    # to Galaxy workflow invocation so datasets can be routed to specific
+    # object stores (e.g., scratch storage on Galaxy EU).
+    default_object_store_id: Optional[str] = Field(
+        default=None,
+        description="Default Galaxy object store ID for workflow invocations"
+    )
+    default_intermediate_object_store_id: Optional[str] = Field(
+        default=None,
+        description="Default Galaxy object store ID for intermediate datasets"
+    )
+    default_outputs_object_store_id: Optional[str] = Field(
+        default=None,
+        description="Default Galaxy object store ID for marked workflow outputs"
+    )
     model_config = SettingsConfigDict(
         case_sensitive=False,
         cli_parse_args=True,

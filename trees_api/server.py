@@ -156,6 +156,9 @@ def _invoke_workflow_with_collection(
     history_name: str,
     workflow_parameters: Dict[int, Dict[str, str]],
     user_parameters: dict,
+    preferred_object_store_id: Optional[str] = None,
+    preferred_intermediate_object_store_id: Optional[str] = None,
+    preferred_outputs_object_store_id: Optional[str] = None,
     history_id: Optional[str] = None,
     history_fk: Optional[int] = None
 ):
@@ -173,6 +176,9 @@ def _invoke_workflow_with_collection(
         history_name: Name of the Galaxy history (for new history creation)
         workflow_parameters: Workflow step parameters (with integer keys)
         user_parameters: User-defined parameters to store
+        preferred_object_store_id: Optional object store ID for all datasets
+        preferred_intermediate_object_store_id: Optional object store for intermediate datasets
+        preferred_outputs_object_store_id: Optional object store for marked outputs
         history_id: Optional existing Galaxy history ID to reuse
         history_fk: Optional ID of the galaxy_histories record to link
         
@@ -190,7 +196,10 @@ def _invoke_workflow_with_collection(
             supabase_client=supabase,
             history_name=history_name if not history_id else None,
             history_id=history_id,
-            parameters=workflow_parameters if workflow_parameters else None
+            parameters=workflow_parameters if workflow_parameters else None,
+            preferred_object_store_id=preferred_object_store_id,
+            preferred_intermediate_object_store_id=preferred_intermediate_object_store_id,
+            preferred_outputs_object_store_id=preferred_outputs_object_store_id,
         )
         logger.info(f"Workflow invoked successfully: {invocation_result['invocation_id']}")
     except Exception as e:
@@ -400,6 +409,19 @@ def create_job(
         dataset_id=dataset_id_int,
         s3_base_path=s3_base_path
     )
+
+    # Default Galaxy EU pipeline to scratch object store to reduce pressure on
+    # default storage. This can be overridden via GALAXY_DEFAULT_* env vars.
+    preferred_object_store_id = None
+    preferred_intermediate_object_store_id = None
+    preferred_outputs_object_store_id = None
+    if workflow_name == "EndToEndPipeline-GalaxyEU":
+        preferred_object_store_id = (
+            galaxy.config.default_object_store_id
+            or "s3_scratch_netapp01"
+        )
+        preferred_intermediate_object_store_id = galaxy.config.default_intermediate_object_store_id
+        preferred_outputs_object_store_id = galaxy.config.default_outputs_object_store_id
     
     # Invoke workflow with collection input - Galaxy fetches during execution
     return _invoke_workflow_with_collection(
@@ -410,6 +432,9 @@ def create_job(
         history_name=history_name,
         workflow_parameters=workflow_parameters,
         user_parameters=parameters,
+        preferred_object_store_id=preferred_object_store_id,
+        preferred_intermediate_object_store_id=preferred_intermediate_object_store_id,
+        preferred_outputs_object_store_id=preferred_outputs_object_store_id,
         history_id=galaxy_history_id,
         history_fk=galaxy_history_fk
     )
