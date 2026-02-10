@@ -1326,6 +1326,57 @@ class GalaxyClient:
         
         logger.info(f"Retrieved {len(invocation_data)} workflow invocations")
         return invocation_data
+
+    def get_workflow_invocations_by_history_id(self, history_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all workflow invocations for a specific Galaxy history.
+
+        Args:
+            history_id: Galaxy history ID
+
+        Returns:
+            List of invocation data dictionaries with normalized fields
+        """
+        if not self.gi:
+            raise RuntimeError("Not connected to Galaxy. Call connect() first.")
+
+        try:
+            invocations = self.gi.gi.make_get_request(
+                f"{self.gi.gi.url}/invocations",
+                params={"history_id": history_id, "step_details": "true"},
+            ).json()
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to list invocations for history {history_id}: {e}"
+            ) from e
+
+        invocation_data = []
+        for inv in invocations or []:
+            jobs = []
+            for step in inv.get("steps", []):
+                for job in step.get("jobs", []):
+                    jobs.append({
+                        "id": job.get("id"),
+                        "state": job.get("state", "unknown"),
+                        "tool_id": job.get("tool_id", ""),
+                        "update_time": job.get("update_time", ""),
+                    })
+
+            invocation_data.append({
+                "id": inv.get("id"),
+                "workflow_id": inv.get("workflow_id"),
+                "state": inv.get("state"),
+                "history_id": inv.get("history_id"),
+                "update_time": inv.get("update_time", ""),
+                "steps": inv.get("steps", []),
+                "inputs": inv.get("inputs", {}),
+                "outputs": inv.get("outputs", {}),
+                "output_collections": inv.get("output_collections", {}),
+                "jobs": jobs,
+                "messages": inv.get("messages", []),
+            })
+
+        return invocation_data
     
     def get_job_details(self, job_id: str) -> Dict[str, Any]:
         """

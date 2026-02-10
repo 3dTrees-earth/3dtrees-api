@@ -9,6 +9,8 @@ When workflows fail, this module also creates Linear issues automatically
 """
 import json
 import logging
+import os
+import re
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 
@@ -56,6 +58,143 @@ TERMINAL_STEP_STATES = {'ok', 'error', 'failed', 'cancelled', 'skipped', 'delete
 
 # How long to wait before discarding invocations missing in Galaxy
 MISSING_INVOCATION_DISCARD_AFTER = timedelta(hours=24)
+DISCOVER_LOOKBACK_HOURS_DEFAULT = 24 * 7
+DISCOVER_HISTORY_LIMIT_DEFAULT = 200
+
+
+def _read_discovery_settings() -> Dict[str, int | bool]:
+    enabled = os.getenv("STATUS_POOLER_DISCOVER_MISSING", "true").lower() in {"1", "true", "yes", "on"}
+    lookback_hours = int(os.getenv("STATUS_POOLER_DISCOVER_LOOKBACK_HOURS", str(DISCOVER_LOOKBACK_HOURS_DEFAULT)))
+    history_limit = int(os.getenv("STATUS_POOLER_DISCOVER_HISTORY_LIMIT", str(DISCOVER_HISTORY_LIMIT_DEFAULT)))
+    return {
+        "enabled": enabled,
+        "lookback_hours": max(1, lookback_hours),
+        "history_limit": max(1, history_limit),
+    }
+
+
+def _extract_dataset_id_from_history_name(history_name: Optional[str]) -> Optional[int]:
+    if not history_name:
+        return None
+    match = re.search(r"[ -]Dataset\s+(\d+)\b", history_name)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_workflow_name_from_history_name(history_name: Optional[str]) -> Optional[str]:
+    if not history_name:
+        return None
+    if " - Dataset " not in history_name:
+        return None
+    candidate = history_name.split(" - Dataset ", 1)[0].strip()
+    if not candidate:
+        return None
+    return candidate
+
+
+def discover_missing_invocations(galaxy_client: GalaxyClient, supabase_client: SupabaseClient) -> Dict[str, int]:
+    """
+    Discover Galaxy invocations missing in DB and create placeholder rows.
+
+    This handles invocations started directly in Galaxy UI that bypass the API layer.
+    """
+    stats = {
+        "histories_checked": 0,
+        "galaxy_invocations_seen": 0,
+        "missing_found": 0,
+        "inserted": 0,
+        "skipped": 0,
+        "errors": 0,
+    }
+    settings = _read_discovery_settings()
+    if not settings["enabled"]:
+        return stats
+
+    try:
+        histories = supabase_client.get_recent_galaxy_histories(
+            hours=settings["lookback_hours"],
+            limit=settings["history_limit"],
+        )
+    except Exception as e:
+        logger.error(f"Missing-invocation discovery failed to load histories: {e}")
+        stats["errors"] += 1
+        return stats
+
+    for history in histories:
+        stats["histories_checked"] += 1
+        history_fk = history.get("id")
+        history_id = history.get("history_id")
+        if history_fk is None or not history_id:
+            stats["skipped"] += 1
+            continue
+
+        try:
+            db_inv_ids = supabase_client.get_invocation_ids_by_history_fk(history_fk)
+            galaxy_invocations = galaxy_client.get_workflow_invocations_by_history_id(history_id)
+            stats["galaxy_invocations_seen"] += len(galaxy_invocations)
+        except Exception as e:
+            logger.warning(f"Failed loading invocations for history_id={history_id}: {e}")
+            stats["errors"] += 1
+            continue
+
+        for galaxy_inv in galaxy_invocations:
+            inv_id = galaxy_inv.get("id")
+            if not inv_id:
+                stats["skipped"] += 1
+                continue
+            if inv_id in db_inv_ids:
+                stats["skipped"] += 1
+                continue
+
+            stats["missing_found"] += 1
+
+            workflow_name = (
+                _extract_workflow_name_from_history_name(history.get("history_name"))
+                or "EndToEndPipeline-GalaxyEU"
+            )
+            dataset_id = history.get("dataset_id")
+            if dataset_id is None:
+                dataset_id = _extract_dataset_id_from_history_name(history.get("history_name"))
+            mapped_status = _map_galaxy_status(galaxy_inv.get("state", "new"))
+
+            try:
+                created = supabase_client.create_workflow_invocation_from_galaxy(
+                    invocation_id=inv_id,
+                    workflow_name=workflow_name,
+                    status=mapped_status,
+                    dataset_id=dataset_id,
+                    history_fk=history_fk,
+                    steps=galaxy_inv.get("steps", []),
+                    inputs=galaxy_inv.get("inputs", {}),
+                    outputs=galaxy_inv.get("outputs", {}),
+                    output_collections=galaxy_inv.get("output_collections", {}),
+                    jobs=galaxy_inv.get("jobs", []),
+                    messages=galaxy_inv.get("messages", []),
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to create DB row for missing Galaxy invocation {inv_id} "
+                    f"(history_id={history_id}): {e}"
+                )
+                stats["errors"] += 1
+                continue
+
+            if created:
+                stats["inserted"] += 1
+                db_inv_ids.add(inv_id)
+                logger.warning(
+                    f"Galaxy invocation {inv_id} existed without DB row; "
+                    f"auto-created record (history_id={history_id}, dataset_id={dataset_id})"
+                )
+            else:
+                stats["skipped"] += 1
+
+    logger.info(f"Missing invocation discovery stats: {stats}")
+    return stats
 
 
 def _map_galaxy_status(galaxy_status: str) -> str:
@@ -347,6 +486,10 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
     }
     
     try:
+        discover_stats = discover_missing_invocations(galaxy_client, supabase_client)
+        if any(discover_stats.values()):
+            logger.info(f"Pre-sync discovery completed: {discover_stats}")
+
         expected_tool_steps: Dict[str, set] = {}
         logger.info("Getting unfinished workflow invocations from Supabase...")
         supabase_invocations = supabase_client.get_unfinished_workflow_invocations()

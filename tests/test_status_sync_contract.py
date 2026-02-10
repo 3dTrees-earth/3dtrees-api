@@ -1,8 +1,13 @@
 from datetime import datetime, timedelta, timezone
+import os
 from pathlib import Path
 
 from trees_api.models import WorkflowInvocation, WorkflowName
-from trees_api.status_sync import MISSING_INVOCATION_DISCARD_AFTER, sync_workflow_statuses
+from trees_api.status_sync import (
+    MISSING_INVOCATION_DISCARD_AFTER,
+    discover_missing_invocations,
+    sync_workflow_statuses,
+)
 
 
 class DummyGalaxyClient:
@@ -27,11 +32,16 @@ class DummyGalaxyClient:
             return list(self._invocations)
         return [inv for inv in self._invocations if inv.get("id") in invocation_ids]
 
+    def get_workflow_invocations_by_history_id(self, history_id: str):
+        return list(self._invocations)
+
 
 class DummySupabaseClient:
     def __init__(self, invocations):
         self._invocations = invocations
         self.updated = {}
+        self.inserted = {}
+        self.histories = []
 
     def get_unfinished_workflow_invocations(self):
         return self._invocations
@@ -44,6 +54,50 @@ class DummySupabaseClient:
                 data.update(updates)
                 return WorkflowInvocation.model_validate(data)
         raise AssertionError(f"Invocation {invocation_id} not found in stub")
+
+    def get_recent_galaxy_histories(self, hours=24 * 7, limit=200):
+        return self.histories[:limit]
+
+    def get_invocation_ids_by_history_fk(self, history_fk: int):
+        inv_ids = {
+            inv.invocation_id
+            for inv in self._invocations
+            if getattr(inv, "history_fk", None) == history_fk
+        }
+        for inv_id, row in self.inserted.items():
+            if row.get("history_fk") == history_fk:
+                inv_ids.add(inv_id)
+        return inv_ids
+
+    def create_workflow_invocation_from_galaxy(
+        self,
+        invocation_id: str,
+        workflow_name: str,
+        status: str,
+        dataset_id: int | None,
+        history_fk: int | None,
+        steps=None,
+        inputs=None,
+        outputs=None,
+        output_collections=None,
+        jobs=None,
+        messages=None,
+    ) -> bool:
+        if invocation_id in self.inserted:
+            return False
+        self.inserted[invocation_id] = {
+            "workflow_name": workflow_name,
+            "status": status,
+            "dataset_id": dataset_id,
+            "history_fk": history_fk,
+            "steps": steps or [],
+            "inputs": inputs or {},
+            "outputs": outputs or {},
+            "output_collections": output_collections or {},
+            "jobs": jobs or [],
+            "messages": messages or [],
+        }
+        return True
 
 
 def test_sync_does_not_complete_when_steps_missing():
@@ -210,3 +264,69 @@ def test_galaxy_eu_scenario_completes_with_invocation_fallback():
     assert update is not None
     assert update["status"] == "ok", f"Expected 'ok', got {update['status']}"
     assert "finished_at" in update
+
+
+def test_discovery_inserts_missing_invocation_when_enabled():
+    os.environ["STATUS_POOLER_DISCOVER_MISSING"] = "true"
+    try:
+        galaxy_inv = {
+            "id": "missing-in-db-1",
+            "state": "scheduled",
+            "jobs": [],
+            "steps": [],
+            "inputs": {},
+            "outputs": {},
+            "output_collections": {},
+            "messages": [],
+        }
+        galaxy_client = DummyGalaxyClient(workflow_structure={"steps": {}}, invocations=[galaxy_inv])
+        supabase_client = DummySupabaseClient([])
+        supabase_client.histories = [
+            {
+                "id": 99,
+                "history_id": "history-99",
+                "dataset_id": 59,
+                "history_name": "EndToEndPipeline-GalaxyEU - Dataset 59",
+            }
+        ]
+
+        stats = discover_missing_invocations(galaxy_client, supabase_client)
+        assert stats["missing_found"] == 1
+        assert stats["inserted"] == 1
+        assert "missing-in-db-1" in supabase_client.inserted
+        assert supabase_client.inserted["missing-in-db-1"]["workflow_name"] == "EndToEndPipeline-GalaxyEU"
+    finally:
+        os.environ.pop("STATUS_POOLER_DISCOVER_MISSING", None)
+
+
+def test_discovery_is_idempotent_for_existing_insert():
+    os.environ["STATUS_POOLER_DISCOVER_MISSING"] = "true"
+    try:
+        galaxy_inv = {
+            "id": "missing-in-db-2",
+            "state": "scheduled",
+            "jobs": [],
+            "steps": [],
+            "inputs": {},
+            "outputs": {},
+            "output_collections": {},
+            "messages": [],
+        }
+        galaxy_client = DummyGalaxyClient(workflow_structure={"steps": {}}, invocations=[galaxy_inv])
+        supabase_client = DummySupabaseClient([])
+        supabase_client.histories = [
+            {
+                "id": 88,
+                "history_id": "history-88",
+                "dataset_id": 60,
+                "history_name": "EndToEndPipeline-GalaxyEU - Dataset 60",
+            }
+        ]
+
+        first = discover_missing_invocations(galaxy_client, supabase_client)
+        second = discover_missing_invocations(galaxy_client, supabase_client)
+        assert first["inserted"] == 1
+        assert second["inserted"] == 0
+        assert second["skipped"] >= 1
+    finally:
+        os.environ.pop("STATUS_POOLER_DISCOVER_MISSING", None)

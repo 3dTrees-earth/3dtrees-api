@@ -3,7 +3,7 @@ import os
 import logging
 from pathlib import Path
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
@@ -444,6 +444,87 @@ class SupabaseClient:
             
         except Exception as e:
             raise RuntimeError(f"Failed to get workflow invocation {invocation_id}: {e}") from e
+
+    def get_invocation_ids_by_history_fk(self, history_fk: int) -> set[str]:
+        """
+        Get all invocation IDs linked to a specific galaxy_histories.id.
+
+        Args:
+            history_fk: Primary key of galaxy_histories
+
+        Returns:
+            Set of invocation_id strings
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table(self.invocations_table)
+                .select("invocation_id")
+                .eq("history_fk", history_fk)
+                .execute()
+            )
+            return {row["invocation_id"] for row in response.data if row.get("invocation_id")}
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to get invocation IDs for history_fk {history_fk}: {e}"
+            ) from e
+
+    def create_workflow_invocation_from_galaxy(
+        self,
+        invocation_id: str,
+        workflow_name: str,
+        status: str,
+        dataset_id: Optional[int],
+        history_fk: Optional[int],
+        steps: Optional[list] = None,
+        inputs: Optional[dict] = None,
+        outputs: Optional[dict] = None,
+        output_collections: Optional[dict] = None,
+        jobs: Optional[list] = None,
+        messages: Optional[list] = None,
+    ) -> bool:
+        """
+        Create a workflow invocation row from Galaxy payload if missing.
+
+        Returns:
+            True if inserted, False if invocation already existed.
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        existing = self.get_workflow_invocation_by_id(invocation_id)
+        if existing is not None:
+            return False
+
+        payload = {
+            "invocation_id": invocation_id,
+            "workflow_name": workflow_name,
+            "status": status,
+            "dataset_id": dataset_id,
+            "history_fk": history_fk,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "steps": steps or [],
+            "inputs": inputs or {},
+            "outputs": outputs or {},
+            "output_collections": output_collections or {},
+            "jobs": jobs or [],
+            "messages": messages or [],
+            "parameters": {},
+            "is_current": True,
+        }
+
+        try:
+            self.client.table(self.invocations_table).insert(payload).execute()
+            logger.info(f"Created workflow invocation from Galaxy: {invocation_id}")
+            return True
+        except Exception as e:
+            # Handle insertion races idempotently.
+            if "duplicate key value" in str(e).lower():
+                logger.info(f"Workflow invocation {invocation_id} already inserted by another worker")
+                return False
+            raise RuntimeError(f"Failed to create workflow invocation {invocation_id}: {e}") from e
     
     def update_workflow_invocation(self, invocation_id: str, **updates) -> WorkflowInvocation:
         """
@@ -671,6 +752,31 @@ class SupabaseClient:
         except Exception as e:
             logger.error(f"Error in get_or_create_galaxy_history for dataset {dataset_id}: {e}")
             raise RuntimeError(f"Failed to get/create galaxy_history: {e}") from e
+
+    def get_recent_galaxy_histories(self, hours: int = 24 * 7, limit: int = 200) -> List[Dict[str, Any]]:
+        """
+        Get recent galaxy histories for reconciliation/discovery.
+
+        Args:
+            hours: Lookback window in hours
+            limit: Max rows to fetch
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+            response = (
+                self.client.table("galaxy_histories")
+                .select("id, history_id, dataset_id, history_name, created_at")
+                .gte("created_at", cutoff)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            return response.data or []
+        except Exception as e:
+            raise RuntimeError(f"Failed to get recent galaxy histories: {e}") from e
     
     def get_galaxy_history_by_dataset(self, dataset_id: int) -> Optional[Dict[str, Any]]:
         """
