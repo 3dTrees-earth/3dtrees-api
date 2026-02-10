@@ -1,6 +1,6 @@
 {
     "a_galaxy_workflow": "true",
-    "annotation": "Full pipeline workflow for Galaxy EU: Collection Check \u2192 Standardization \u2192 Exports \u2192 Overviews \u2192 Exports \u2192 Tile \u2192 Segmentation \u2192 Merge \u2192 Export \u2192 Potree \u2192 Exports",
+    "annotation": "Full pipeline workflow for Galaxy EU: Collection Check \u2192 Standardization \u2192 Exports \u2192 Overviews \u2192 Exports \u2192 SmartTile (Tile) \u2192 Segmentation \u2192 SmartTile (Merge) \u2192 Export \u2192 3DTiles \u2192 Exports (including child tilesets)",
     "comments": [],
     "creator": [
         {
@@ -33,10 +33,10 @@
             "outputs": [],
             "position": {
                 "left": 0,
-                "top": 360
+                "top": 200
             },
             "tool_id": null,
-            "tool_state": "{\"optional\": false, \"format\": [\"laz\", \"las\"], \"tag\": null, \"collection_type\": \"list\", \"fields\": null, \"column_definitions\": null}",
+            "tool_state": "{\"optional\": false, \"format\": [\"laz\", \"las\"], \"collection_type\": \"list\"}",
             "tool_version": null,
             "type": "data_collection_input",
             "uuid": "219ddff1-a7a2-42ea-aaef-f3e0bf0328c1",
@@ -44,22 +44,83 @@
             "workflow_outputs": []
         },
         "1": {
-            "annotation": "Standardize individual files in collection",
+            "annotation": "Collection-level validation and consistency check using standardization tool in collection mode",
             "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_standardization/3dtrees_standardization/1.1.0+galaxy0",
             "errors": null,
             "id": 1,
+            "input_connections": {
+                "mode|input_collection": {
+                    "id": 0,
+                    "output_name": "output"
+                }
+            },
+            "inputs": [],
+            "label": "3DTrees Collection Check",
+            "name": "3DTrees: LAS/LAZ Standardization",
+            "outputs": [
+                {
+                    "name": "collection_summary",
+                    "type": "json"
+                }
+            ],
+            "position": {
+                "left": 280,
+                "top": 50
+            },
+            "post_job_actions": {},
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_standardization/3dtrees_standardization/1.1.0+galaxy0",
+            "tool_state": "{\"mode\": {\"task\": \"collection\", \"__current_case__\": 1, \"input_collection\": {\"__class__\": \"ConnectedValue\"}}}",
+            "tool_version": "1.1.0+galaxy0",
+            "type": "tool",
+            "uuid": "bb4336ab-8741-4c24-836c-b8bba0c9cf2f",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "2": {
+            "annotation": "export_collection_summary: Export collection summary JSON to S3",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 2,
+            "input_connections": {
+                "export_type|infiles": {
+                    "id": 1,
+                    "output_name": "collection_summary"
+                }
+            },
+            "inputs": [],
+            "label": "Export Collection Summary",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 560,
+                "top": 50
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxuserfiles://e1d3f62b-2abb-4f1f-a888-e69f676980cb/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "7eae06b0-10c1-4790-9471-2635961f850a",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "3": {
+            "annotation": "Standardize individual files in collection",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_standardization/3dtrees_standardization/1.1.0+galaxy0",
+            "errors": null,
+            "id": 3,
             "input_connections": {
                 "mode|input": {
                     "id": 0,
                     "output_name": "output"
                 }
             },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool 3DTrees: LAS/LAZ Standardization",
-                    "name": "mode"
-                }
-            ],
+            "inputs": [],
             "label": "3DTrees LAS/LAZ Standardization",
             "name": "3DTrees: LAS/LAZ Standardization",
             "outputs": [
@@ -77,184 +138,30 @@
                 }
             ],
             "position": {
-                "left": 310,
-                "top": 360
+                "left": 280,
+                "top": 200
             },
             "post_job_actions": {},
             "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_standardization/3dtrees_standardization/1.1.0+galaxy0",
-            "tool_shed_repository": {
-                "changeset_revision": "e83d551e7b8c",
-                "name": "3dtrees_standardization",
-                "owner": "bgruening",
-                "tool_shed": "toolshed.g2.bx.psu.edu"
-            },
-            "tool_state": "{\"mode\": {\"task\": \"single_file\", \"__current_case__\": 0, \"input\": {\"__class__\": \"ConnectedValue\"}, \"min_density\": \"10\", \"removeable_attributes\": \"\"}, \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
+            "tool_state": "{\"mode\": {\"task\": \"single_file\", \"__current_case__\": 0, \"input\": {\"__class__\": \"ConnectedValue\"}, \"min_density\": 10, \"removeable_attributes\": \"\"}}",
             "tool_version": "1.1.0+galaxy0",
             "type": "tool",
             "uuid": "f9f77a82-0fa8-4b22-986f-a1cd2ad8a5fd",
             "when": null,
             "workflow_outputs": []
         },
-        "2": {
-            "annotation": "Collection-level validation and consistency check using standardization tool in collection mode",
-            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_standardization/3dtrees_standardization/1.1.0+galaxy0",
-            "errors": null,
-            "id": 2,
-            "input_connections": {
-                "mode|input_collection": {
-                    "id": 0,
-                    "output_name": "output"
-                }
-            },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool 3DTrees: LAS/LAZ Standardization",
-                    "name": "mode"
-                }
-            ],
-            "label": "3DTrees Collection Check",
-            "name": "3DTrees: LAS/LAZ Standardization",
-            "outputs": [
-                {
-                    "name": "collection_summary",
-                    "type": "json"
-                }
-            ],
-            "position": {
-                "left": 310,
-                "top": 1130
-            },
-            "post_job_actions": {},
-            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_standardization/3dtrees_standardization/1.1.0+galaxy0",
-            "tool_shed_repository": {
-                "changeset_revision": "e83d551e7b8c",
-                "name": "3dtrees_standardization",
-                "owner": "bgruening",
-                "tool_shed": "toolshed.g2.bx.psu.edu"
-            },
-            "tool_state": "{\"mode\": {\"task\": \"collection\", \"__current_case__\": 1, \"input_collection\": {\"__class__\": \"ConnectedValue\"}}, \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
-            "tool_version": "1.1.0+galaxy0",
-            "type": "tool",
-            "uuid": "bb4336ab-8741-4c24-836c-b8bba0c9cf2f",
-            "when": null,
-            "workflow_outputs": []
-        },
-        "3": {
-            "annotation": "",
-            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_smart_tile/3dtrees_smart_tile/1.0.0+galaxy0",
-            "errors": null,
-            "id": 3,
-            "input_connections": {
-                "operation|input_files": {
-                    "id": 1,
-                    "output_name": "pc_standardized"
-                }
-            },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool 3DTrees: SmartTile",
-                    "name": "operation"
-                }
-            ],
-            "label": null,
-            "name": "3DTrees: SmartTile",
-            "outputs": [
-                {
-                    "name": "Subsampled_Resolution_1",
-                    "type": "input"
-                },
-                {
-                    "name": "Subsampled_Resolution_2",
-                    "type": "input"
-                },
-                {
-                    "name": "output_png",
-                    "type": "png"
-                }
-            ],
-            "position": {
-                "left": 720,
-                "top": 0
-            },
-            "post_job_actions": {},
-            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_smart_tile/3dtrees_smart_tile/1.0.0+galaxy0",
-            "tool_shed_repository": {
-                "changeset_revision": "384ed4cad819",
-                "name": "3dtrees_smart_tile",
-                "owner": "bgruening",
-                "tool_shed": "toolshed.g2.bx.psu.edu"
-            },
-            "tool_state": "{\"operation\": {\"task\": \"tile\", \"__current_case__\": 0, \"input_files\": {\"__class__\": \"ConnectedValue\"}, \"tile_length\": \"300\", \"tile_buffer\": \"20\", \"tiling_threshold\": \"10000.0\", \"resolution_1\": \"0.01\", \"resolution_2\": \"0.1\", \"skip_dimension_reduction\": true, \"workers\": \"2\"}, \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
-            "tool_version": "1.0.0+galaxy0",
-            "type": "tool",
-            "uuid": "ce4f5239-3c63-493a-a7ce-cbc7b0c7b3c0",
-            "when": null,
-            "workflow_outputs": []
-        },
         "4": {
-            "annotation": "Generate overview images from standardized point clouds",
-            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_overviews/3dtrees_overviews/1.2.0+galaxy1",
+            "annotation": "export_standardized_laz: Export standardized LAZ collection to S3 products bucket",
+            "content_id": "export_remote",
             "errors": null,
             "id": 4,
             "input_connections": {
-                "input": {
-                    "id": 1,
+                "export_type|incollection": {
+                    "id": 3,
                     "output_name": "pc_standardized"
                 }
             },
             "inputs": [],
-            "label": "3D Trees Overview Generator",
-            "name": "3Dtrees: Overviews",
-            "outputs": [
-                {
-                    "name": "top_views",
-                    "type": "input"
-                },
-                {
-                    "name": "section_views",
-                    "type": "input"
-                }
-            ],
-            "position": {
-                "left": 720,
-                "top": 360
-            },
-            "post_job_actions": {},
-            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_overviews/3dtrees_overviews/1.2.0+galaxy1",
-            "tool_shed_repository": {
-                "changeset_revision": "049c348797e9",
-                "name": "3dtrees_overviews",
-                "owner": "bgruening",
-                "tool_shed": "toolshed.g2.bx.psu.edu"
-            },
-            "tool_state": "{\"camera_distance\": \"35.0\", \"cmap\": \"viridis\", \"image_height\": \"768\", \"image_width\": \"1024\", \"input\": {\"__class__\": \"ConnectedValue\"}, \"max_total_points\": \"40000000\", \"section_width\": \"10\", \"top_views_deg\": \"180\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
-            "tool_version": "1.2.0+galaxy1",
-            "type": "tool",
-            "uuid": "0b454a3d-8196-4208-842a-79a729f00a2d",
-            "when": null,
-            "workflow_outputs": []
-        },
-        "5": {
-            "annotation": "export_standardized_laz: Export standardized LAZ collection to S3 products bucket",
-            "content_id": "export_remote",
-            "errors": null,
-            "id": 5,
-            "input_connections": {
-                "export_type|incollection": {
-                    "id": 1,
-                    "output_name": "pc_standardized"
-                }
-            },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool Export datasets",
-                    "name": "export_type"
-                }
-            ],
             "label": "Export Standardized LAZ",
             "name": "Export datasets",
             "outputs": [
@@ -264,36 +171,30 @@
                 }
             ],
             "position": {
-                "left": 720,
-                "top": 560
+                "left": 560,
+                "top": 200
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"d_uri\": \"gxuserfiles://e1d3f62b-2abb-4f1f-a888-e69f676980cb/\", \"export_type\": {\"export_type_selector\": \"collection_auto\", \"__current_case__\": 1, \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"include_metadata_files\": false, \"invalid_chars\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxuserfiles://e1d3f62b-2abb-4f1f-a888-e69f676980cb/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "b7aaba62-d840-4fe6-9586-35d79f8f8f4a",
             "when": null,
             "workflow_outputs": []
         },
-        "6": {
+        "5": {
             "annotation": "export_metadata_json: Export metadata JSON collection to S3 standard path",
             "content_id": "export_remote",
             "errors": null,
-            "id": 6,
+            "id": 5,
             "input_connections": {
                 "export_type|incollection": {
-                    "id": 1,
+                    "id": 3,
                     "output_name": "metadata_json"
                 }
             },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool Export datasets",
-                    "name": "export_type"
-                }
-            ],
+            "inputs": [],
             "label": "Export Metadata JSON",
             "name": "Export datasets",
             "outputs": [
@@ -303,36 +204,30 @@
                 }
             ],
             "position": {
-                "left": 720,
-                "top": 750
+                "left": 560,
+                "top": 300
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"d_uri\": \"gxuserfiles://e1d3f62b-2abb-4f1f-a888-e69f676980cb/\", \"export_type\": {\"export_type_selector\": \"collection_auto\", \"__current_case__\": 1, \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"include_metadata_files\": false, \"invalid_chars\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxuserfiles://e1d3f62b-2abb-4f1f-a888-e69f676980cb/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "862a1a8b-ff1e-4a1b-8483-eb178c1fd1a4",
             "when": null,
             "workflow_outputs": []
         },
-        "7": {
+        "6": {
             "annotation": "export_convex_hull: Export convex hull GeoJSON collection to S3 standard path",
             "content_id": "export_remote",
             "errors": null,
-            "id": 7,
+            "id": 6,
             "input_connections": {
                 "export_type|incollection": {
-                    "id": 1,
+                    "id": 3,
                     "output_name": "convex_hull"
                 }
             },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool Export datasets",
-                    "name": "export_type"
-                }
-            ],
+            "inputs": [],
             "label": "Export Convex Hull GeoJSON",
             "name": "Export datasets",
             "outputs": [
@@ -342,115 +237,67 @@
                 }
             ],
             "position": {
-                "left": 720,
-                "top": 940
+                "left": 560,
+                "top": 400
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"d_uri\": \"gxuserfiles://e1d3f62b-2abb-4f1f-a888-e69f676980cb/\", \"export_type\": {\"export_type_selector\": \"collection_auto\", \"__current_case__\": 1, \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"include_metadata_files\": false, \"invalid_chars\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxuserfiles://e1d3f62b-2abb-4f1f-a888-e69f676980cb/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "e88dd758-9432-41aa-a528-5e3f4725d8c5",
             "when": null,
             "workflow_outputs": []
         },
+        "7": {
+            "annotation": "Generate overview images from standardized point clouds",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_overviews/3dtrees_overviews/1.2.0+galaxy1",
+            "errors": null,
+            "id": 7,
+            "input_connections": {
+                "input": {
+                    "id": 3,
+                    "output_name": "pc_standardized"
+                }
+            },
+            "inputs": [],
+            "label": "3D Trees Overview Generator",
+            "name": "3D Trees Overview Generator",
+            "outputs": [
+                {
+                    "name": "top_views",
+                    "type": "list"
+                },
+                {
+                    "name": "section_views",
+                    "type": "list"
+                }
+            ],
+            "position": {
+                "left": 840,
+                "top": 0
+            },
+            "post_job_actions": {},
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_overviews/3dtrees_overviews/1.2.0+galaxy1",
+            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}}",
+            "tool_version": "1.2.0+galaxy1",
+            "type": "tool",
+            "uuid": "0b454a3d-8196-4208-842a-79a729f00a2d",
+            "when": null,
+            "workflow_outputs": []
+        },
         "8": {
-            "annotation": "export_collection_summary: Export collection summary JSON to S3",
+            "annotation": "export_top_views: Export top view images to S3",
             "content_id": "export_remote",
             "errors": null,
             "id": 8,
             "input_connections": {
-                "export_type|infiles": {
-                    "id": 2,
-                    "output_name": "collection_summary"
-                }
-            },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool Export datasets",
-                    "name": "export_type"
-                }
-            ],
-            "label": "Export Collection Summary",
-            "name": "Export datasets",
-            "outputs": [
-                {
-                    "name": "out",
-                    "type": "txt"
-                }
-            ],
-            "position": {
-                "left": 720,
-                "top": 1130
-            },
-            "post_job_actions": {},
-            "tool_id": "export_remote",
-            "tool_state": "{\"d_uri\": \"gxuserfiles://e1d3f62b-2abb-4f1f-a888-e69f676980cb/\", \"export_type\": {\"export_type_selector\": \"datasets_auto\", \"__current_case__\": 0, \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"include_metadata_files\": false, \"invalid_chars\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
-            "tool_version": "0.1.0",
-            "type": "tool",
-            "uuid": "7eae06b0-10c1-4790-9471-2635961f850a",
-            "when": null,
-            "workflow_outputs": []
-        },
-        "9": {
-            "annotation": "Deep learning tree segmentation",
-            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_segmentanytree/3dtrees_segmentanytree/1.1.0+galaxy0",
-            "errors": null,
-            "id": 9,
-            "input_connections": {
-                "input": {
-                    "id": 3,
-                    "output_name": "Subsampled_Resolution_2"
-                }
-            },
-            "inputs": [],
-            "label": "3Dtrees: SegmentAnyTree",
-            "name": "3Dtrees: SegmentAnyTree",
-            "outputs": [
-                {
-                    "name": "output",
-                    "type": "zip"
-                }
-            ],
-            "position": {
-                "left": 1030,
-                "top": 50
-            },
-            "post_job_actions": {},
-            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_segmentanytree/3dtrees_segmentanytree/1.1.0+galaxy0",
-            "tool_shed_repository": {
-                "changeset_revision": "6f80b2dfb7d4",
-                "name": "3dtrees_segmentanytree",
-                "owner": "bgruening",
-                "tool_shed": "toolshed.g2.bx.psu.edu"
-            },
-            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"log_file\": false, \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
-            "tool_version": "1.1.0+galaxy0",
-            "type": "tool",
-            "uuid": "49190aa0-3e24-4abf-a8cf-2a96cf89d7ae",
-            "when": null,
-            "workflow_outputs": []
-        },
-        "10": {
-            "annotation": "export_top_views: Export top view images to S3",
-            "content_id": "export_remote",
-            "errors": null,
-            "id": 10,
-            "input_connections": {
                 "export_type|incollection": {
-                    "id": 4,
+                    "id": 7,
                     "output_name": "top_views"
                 }
             },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool Export datasets",
-                    "name": "export_type"
-                }
-            ],
+            "inputs": [],
             "label": "Export Top Views",
             "name": "Export datasets",
             "outputs": [
@@ -460,36 +307,30 @@
                 }
             ],
             "position": {
-                "left": 1030,
-                "top": 360
+                "left": 1120,
+                "top": 0
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/\", \"export_type\": {\"export_type_selector\": \"collection_auto\", \"__current_case__\": 1, \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"include_metadata_files\": false, \"invalid_chars\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "745b926e-be45-4eb7-a000-d7c5a9703df4",
             "when": null,
             "workflow_outputs": []
         },
-        "11": {
+        "9": {
             "annotation": "export_section_views: Export section view images to S3",
             "content_id": "export_remote",
             "errors": null,
-            "id": 11,
+            "id": 9,
             "input_connections": {
                 "export_type|incollection": {
-                    "id": 4,
+                    "id": 7,
                     "output_name": "section_views"
                 }
             },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool Export datasets",
-                    "name": "export_type"
-                }
-            ],
+            "inputs": [],
             "label": "Export Section Views",
             "name": "Export datasets",
             "outputs": [
@@ -499,58 +340,118 @@
                 }
             ],
             "position": {
-                "left": 1030,
-                "top": 550
+                "left": 1120,
+                "top": 100
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/\", \"export_type\": {\"export_type_selector\": \"collection_auto\", \"__current_case__\": 1, \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"include_metadata_files\": false, \"invalid_chars\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "b734e4ac-12b0-41b1-9864-4a029412ba11",
             "when": null,
             "workflow_outputs": []
         },
+        "10": {
+            "annotation": "Subsample and tile point cloud for segmentation",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_smart_tile/3dtrees_smart_tile/1.0.1+galaxy0",
+            "errors": null,
+            "id": 10,
+            "input_connections": {
+                "operation|input_files": {
+                    "id": 3,
+                    "output_name": "pc_standardized"
+                }
+            },
+            "inputs": [],
+            "label": "3DTrees: SmartTile (Tile)",
+            "name": "3DTrees: SmartTile",
+            "outputs": [
+                {
+                    "name": "Subsampled_Resolution_1",
+                    "type": "collection"
+                },
+                {
+                    "name": "Subsampled_Resolution_2",
+                    "type": "collection"
+                },
+                {
+                    "name": "output_png",
+                    "type": "png"
+                }
+            ],
+            "position": {
+                "left": 560,
+                "top": 500
+            },
+            "post_job_actions": {},
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_smart_tile/3dtrees_smart_tile/1.0.1+galaxy0",
+            "tool_state": "{\"operation\": {\"task\": \"tile\", \"__current_case__\": 0, \"input_files\": {\"__class__\": \"ConnectedValue\"}, \"tile_length\": 300, \"tile_buffer\": 20, \"resolution_1\": 0.01, \"resolution_2\": 0.1, \"skip_dimension_reduction\": true}}",
+            "tool_version": "1.0.1+galaxy0",
+            "type": "tool",
+            "uuid": "7b561a98-b8b3-4139-b986-a019663ea766",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "11": {
+            "annotation": "Deep learning tree segmentation",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_segmentanytree/3dtrees_segmentanytree/1.1.0+galaxy0",
+            "errors": null,
+            "id": 11,
+            "input_connections": {
+                "input": {
+                    "id": 10,
+                    "output_name": "Subsampled_Resolution_2"
+                }
+            },
+            "inputs": [],
+            "label": "3Dtrees: SegmentAnyTree",
+            "name": "3Dtrees: SegmentAnyTree",
+            "outputs": [
+                {
+                    "name": "output",
+                    "type": "laz"
+                }
+            ],
+            "position": {
+                "left": 840,
+                "top": 500
+            },
+            "post_job_actions": {},
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_segmentanytree/3dtrees_segmentanytree/1.1.0+galaxy0",
+            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"log_file\": false}",
+            "tool_version": "1.1.0+galaxy0",
+            "type": "tool",
+            "uuid": "49190aa0-3e24-4abf-a8cf-2a96cf89d7ae",
+            "when": null,
+            "workflow_outputs": []
+        },
         "12": {
-            "annotation": "",
-            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_smart_tile/3dtrees_smart_tile/1.0.0+galaxy0",
+            "annotation": "Merge segmented tiles back to original resolution",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_smart_tile/3dtrees_smart_tile/1.0.1+galaxy0",
             "errors": null,
             "id": 12,
             "input_connections": {
-                "operation|input_original": {
-                    "id": 1,
-                    "output_name": "pc_standardized"
+                "operation|input_segmented": {
+                    "id": 11,
+                    "output_name": "output"
                 },
                 "operation|input_res1": {
-                    "id": 3,
+                    "id": 10,
                     "output_name": "Subsampled_Resolution_1"
                 },
-                "operation|input_segmented": {
-                    "id": 9,
-                    "output_name": "output"
+                "operation|input_original": {
+                    "id": 3,
+                    "output_name": "pc_standardized"
                 }
             },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool 3DTrees: SmartTile",
-                    "name": "operation"
-                },
-                {
-                    "description": "runtime parameter for tool 3DTrees: SmartTile",
-                    "name": "operation"
-                },
-                {
-                    "description": "runtime parameter for tool 3DTrees: SmartTile",
-                    "name": "operation"
-                }
-            ],
-            "label": null,
+            "inputs": [],
+            "label": "3DTrees: SmartTile (Merge)",
             "name": "3DTrees: SmartTile",
             "outputs": [
                 {
                     "name": "output_merge_tiles",
-                    "type": "input"
+                    "type": "collection"
                 },
                 {
                     "name": "output_merged_laz",
@@ -558,22 +459,15 @@
                 }
             ],
             "position": {
-                "left": 1320.7682427137895,
-                "top": 52.75187746984836
+                "left": 1120,
+                "top": 500
             },
             "post_job_actions": {},
-            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_smart_tile/3dtrees_smart_tile/1.0.0+galaxy0",
-            "tool_shed_repository": {
-                "changeset_revision": "384ed4cad819",
-                "name": "3dtrees_smart_tile",
-                "owner": "bgruening",
-                "tool_shed": "toolshed.g2.bx.psu.edu"
-            },
-            "tool_state": "{\"operation\": {\"task\": \"merge\", \"__current_case__\": 1, \"input_segmented\": {\"__class__\": \"ConnectedValue\"}, \"input_res1\": {\"__class__\": \"ConnectedValue\"}, \"input_original\": {\"__class__\": \"ConnectedValue\"}, \"buffer\": \"30.0\", \"overlap_threshold\": \"0.3\", \"max_centroid_distance\": \"3.0\", \"max_volume_for_merge\": \"4.0\", \"min_cluster_size\": \"300\", \"border_zone_width\": \"10.0\", \"correspondence_tolerance\": \"0.05\", \"disable_matching\": false, \"workers\": \"2\"}, \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
-            "tool_version": "1.0.0+galaxy0",
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_smart_tile/3dtrees_smart_tile/1.0.1+galaxy0",
+            "tool_state": "{\"operation\": {\"task\": \"merge\", \"__current_case__\": 1, \"input_segmented\": {\"__class__\": \"ConnectedValue\"}, \"input_res1\": {\"__class__\": \"ConnectedValue\"}, \"input_original\": {\"__class__\": \"ConnectedValue\"}, \"buffer\": 30.0, \"overlap_threshold\": 0.3, \"max_centroid_distance\": 3.0, \"correspondence_tolerance\": 0.05, \"max_volume_for_merge\": 4.0, \"min_cluster_size\": 300, \"border_zone_width\": 10.0, \"disable_matching\": false}}",
+            "tool_version": "1.0.1+galaxy0",
             "type": "tool",
-            "uuid": "e94cf0d8-14fa-4943-bc15-83f116793b3d",
+            "uuid": "f858c2ed-b151-4dbf-862b-7839f600351f",
             "when": null,
             "workflow_outputs": []
         },
@@ -588,12 +482,7 @@
                     "output_name": "output_merge_tiles"
                 }
             },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool Export datasets",
-                    "name": "export_type"
-                }
-            ],
+            "inputs": [],
             "label": "Export Segmented LAZ",
             "name": "Export datasets",
             "outputs": [
@@ -603,13 +492,12 @@
                 }
             ],
             "position": {
-                "left": 1650,
-                "top": 50
+                "left": 1400,
+                "top": 500
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"d_uri\": \"gxuserfiles://e1d3f62b-2abb-4f1f-a888-e69f676980cb/\", \"export_type\": {\"export_type_selector\": \"collection_auto\", \"__current_case__\": 1, \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"include_metadata_files\": false, \"invalid_chars\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxuserfiles://e1d3f62b-2abb-4f1f-a888-e69f676980cb/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "849de35d-6fe8-4b26-9089-5e21c6e28961",
@@ -617,8 +505,8 @@
             "workflow_outputs": []
         },
         "14": {
-            "annotation": "Convert segmented collection to Potree octree format",
-            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_potree/3dtrees_potree/1.0.0+galaxy0",
+            "annotation": "Convert segmented collection to single merged 3D Tiles tileset",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_py3dtiles/3dtrees_py3dtiles/1.1.0+galaxy1",
             "errors": null,
             "id": 14,
             "input_connections": {
@@ -628,52 +516,48 @@
                 }
             },
             "inputs": [],
-            "label": "3Dtrees: Potree Converter",
-            "name": "3Dtrees: Potree Converter",
+            "label": "3D Trees Py3DTiles Converter",
+            "name": "3D Trees Py3DTiles Converter",
             "outputs": [
                 {
-                    "name": "potree_output",
-                    "type": "input"
+                    "name": "tileset_json",
+                    "type": "json"
+                },
+                {
+                    "name": "preview_pnts",
+                    "type": "pnts"
+                },
+                {
+                    "name": "points_tiles",
+                    "type": "collection"
                 }
             ],
             "position": {
-                "left": 1650,
-                "top": 240
+                "left": 1680,
+                "top": 500
             },
             "post_job_actions": {},
-            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_potree/3dtrees_potree/1.0.0+galaxy0",
-            "tool_shed_repository": {
-                "changeset_revision": "3104b1edd779",
-                "name": "3dtrees_potree",
-                "owner": "bgruening",
-                "tool_shed": "toolshed.g2.bx.psu.edu"
-            },
-            "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
-            "tool_version": "1.0.0+galaxy0",
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_py3dtiles/3dtrees_py3dtiles/1.1.0+galaxy1",
+            "tool_state": "{\"extra_fields\": \"PredInstance\", \"input\": {\"__class__\": \"ConnectedValue\"}, \"overwrite\": false, \"srs_out\": \"4978\"}",
+            "tool_version": "1.1.0+galaxy1",
             "type": "tool",
             "uuid": "620d39f9-142f-4636-84ae-81bff61eaafb",
             "when": null,
             "workflow_outputs": []
         },
         "15": {
-            "annotation": "export_potree: Export potree metadata + octree to S3 visualization bucket",
+            "annotation": "export_tileset: Export tileset.json to S3 3dtiles/",
             "content_id": "export_remote",
             "errors": null,
             "id": 15,
             "input_connections": {
-                "export_type|incollection": {
+                "export_type|infiles": {
                     "id": 14,
-                    "output_name": "potree_output"
+                    "output_name": "tileset_json"
                 }
             },
-            "inputs": [
-                {
-                    "description": "runtime parameter for tool Export datasets",
-                    "name": "export_type"
-                }
-            ],
-            "label": "Export Potree Output",
+            "inputs": [],
+            "label": "Export Tileset JSON",
             "name": "Export datasets",
             "outputs": [
                 {
@@ -682,16 +566,114 @@
                 }
             ],
             "position": {
-                "left": 2010,
-                "top": 70
+                "left": 1960,
+                "top": 400
             },
             "post_job_actions": {},
             "tool_id": "export_remote",
-            "tool_state": "{\"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/potree/\", \"export_type\": {\"export_type_selector\": \"collection_auto\", \"__current_case__\": 1, \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"include_metadata_files\": false, \"invalid_chars\": \"\", \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
-            "tool_uuid": null,
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/3dtiles/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "152176d1-9b35-41c6-af9d-318a9f6b63af",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "16": {
+            "annotation": "export_preview: Export preview.pnts to S3 3dtiles/",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 16,
+            "input_connections": {
+                "export_type|infiles": {
+                    "id": 14,
+                    "output_name": "preview_pnts"
+                }
+            },
+            "inputs": [],
+            "label": "Export Preview PNTS",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 1960,
+                "top": 500
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"datasets_auto\", \"infiles\": {\"__class__\": \"ConnectedValue\"}}, \"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/3dtiles/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "de4a34b8-d119-4760-a2ca-4639d9110902",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "17": {
+            "annotation": "export_points_tiles: Export points tiles to S3 3dtiles/points/ subdirectory",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 17,
+            "input_connections": {
+                "export_type|incollection": {
+                    "id": 14,
+                    "output_name": "points_tiles"
+                }
+            },
+            "inputs": [],
+            "label": "Export Points Tiles",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 1960,
+                "top": 600
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/3dtiles/points/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
             "uuid": "67470c3f-2429-45ea-987b-ed2ea48c9909",
+            "when": null,
+            "workflow_outputs": []
+        },
+        "18": {
+            "annotation": "export_child_tilesets: Export child tileset JSON files to S3 3dtiles/points/ subdirectory",
+            "content_id": "export_remote",
+            "errors": null,
+            "id": 18,
+            "input_connections": {
+                "export_type|incollection": {
+                    "id": 14,
+                    "output_name": "child_tilesets"
+                }
+            },
+            "inputs": [],
+            "label": "Export Child Tilesets",
+            "name": "Export datasets",
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "txt"
+                }
+            ],
+            "position": {
+                "left": 1960,
+                "top": 700
+            },
+            "post_job_actions": {},
+            "tool_id": "export_remote",
+            "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxuserfiles://b3593d8c-534a-428b-bdc1-891cfc7e0547/3dtiles/points/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
+            "tool_version": "0.1.0",
+            "type": "tool",
+            "uuid": "a8f4c2d1-3b5e-4a9f-8c7d-6e2f1a0b9c8d",
             "when": null,
             "workflow_outputs": []
         }
@@ -703,9 +685,9 @@
         "Standardization",
         "Overviews",
         "TileMerge",
-        "Potree",
+        "3DTiles",
         "S3Export"
     ],
-    "uuid": "6e4e7d5a-b3f5-4163-9b2d-8df5bdb77797",
-    "version": 2
+    "uuid": "a237b937-642a-4301-b97f-0e11622dd700",
+    "version": 5
 }
