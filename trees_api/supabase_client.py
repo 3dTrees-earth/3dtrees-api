@@ -321,6 +321,9 @@ class SupabaseClient:
             "invocation_id": workflow_uuid,
             "workflow_name": workflow_name,
             "status": "new",  # Galaxy state for newly created invocations
+            # Current ownership is DB-authoritative. We insert as non-current and
+            # then promote atomically via RPC to avoid duplicate current rows.
+            "is_current": False,
             "started_at": datetime.now().isoformat(),
             "inputs": {},  # Galaxy returns inputs as dict with step indices as keys
             "steps": [],   # Initialize as empty list
@@ -336,8 +339,9 @@ class SupabaseClient:
             invocation_data["history_fk"] = history_fk
         
         response = self.client.table(self.invocations_table).insert(invocation_data).execute()
-
-        return WorkflowInvocation.model_validate(response.data[0])
+        invocation = WorkflowInvocation.model_validate(response.data[0])
+        self.promote_current_workflow_invocation(dataset_id=dataset_id, invocation_id=workflow_uuid)
+        return invocation
     
     def get_workflow_invocations(self, status: Optional[str] = None, limit: int = 100, offset: int = 0, results_synced: Optional[bool] = None) -> List[WorkflowInvocation]:
         """
@@ -512,11 +516,15 @@ class SupabaseClient:
             "jobs": jobs or [],
             "messages": messages or [],
             "parameters": {},
-            "is_current": True,
+            # Current ownership is DB-authoritative. We insert as non-current and
+            # then promote atomically via RPC to avoid duplicate current rows.
+            "is_current": False,
         }
 
         try:
             self.client.table(self.invocations_table).insert(payload).execute()
+            if dataset_id is not None:
+                self.promote_current_workflow_invocation(dataset_id=dataset_id, invocation_id=invocation_id)
             logger.info(f"Created workflow invocation from Galaxy: {invocation_id}")
             return True
         except Exception as e:
@@ -525,6 +533,52 @@ class SupabaseClient:
                 logger.info(f"Workflow invocation {invocation_id} already inserted by another worker")
                 return False
             raise RuntimeError(f"Failed to create workflow invocation {invocation_id}: {e}") from e
+
+    def promote_current_workflow_invocation(
+        self,
+        dataset_id: int,
+        invocation_id: Optional[str] = None,
+    ) -> Optional[int]:
+        """
+        Promote exactly one current invocation for a dataset via DB RPC.
+
+        Args:
+            dataset_id: Dataset whose invocation rows should be reconciled
+            invocation_id: Optional preferred invocation_id to promote
+
+        Returns:
+            ID of the current invocation after reconciliation, or None
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        if dataset_id is None:
+            return None
+
+        params: Dict[str, Any] = {"p_dataset_id": dataset_id}
+        if invocation_id is not None:
+            params["p_invocation_id"] = invocation_id
+
+        try:
+            response = self.client.rpc("promote_current_workflow_invocation", params).execute()
+            result = response.data
+            if result is None:
+                return None
+            if isinstance(result, list):
+                if not result:
+                    return None
+                first = result[0]
+                if isinstance(first, dict):
+                    value = first.get("promote_current_workflow_invocation")
+                    return int(value) if value is not None else None
+                return int(first)
+            if isinstance(result, dict):
+                value = result.get("promote_current_workflow_invocation")
+                return int(value) if value is not None else None
+            return int(result)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to reconcile current invocation for dataset {dataset_id}: {e}"
+            ) from e
     
     def update_workflow_invocation(self, invocation_id: str, **updates) -> WorkflowInvocation:
         """
