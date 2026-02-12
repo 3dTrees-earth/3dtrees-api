@@ -395,7 +395,7 @@
         },
         "11": {
             "annotation": "Deep learning tree segmentation",
-            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_segmentanytree/3dtrees_segmentanytree/1.1.0+galaxy0",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_segmentanytree/3dtrees_segmentanytree/1.2.0+galaxy0",
             "errors": null,
             "id": 11,
             "input_connections": {
@@ -418,7 +418,7 @@
                 "top": 500
             },
             "post_job_actions": {},
-            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_segmentanytree/3dtrees_segmentanytree/1.1.0+galaxy0",
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/3dtrees_segmentanytree/3dtrees_segmentanytree/1.2.0+galaxy0",
             "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"log_file\": false}",
             "tool_version": "1.1.0+galaxy0",
             "type": "tool",
