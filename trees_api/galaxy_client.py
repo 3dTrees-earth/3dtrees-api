@@ -302,11 +302,34 @@ class GalaxyClient:
             
             # Load workflow registry after successful connection
             self._load_workflow_registry()
+
+            # Sync workflows with Galaxy (update if versions differ)
+            self._sync_workflows()
             
             return True
             
         except Exception as e:
             raise RuntimeError(f"Failed to connect to Galaxy: {e}") from e
+
+    def _sync_workflows(self):
+        """
+        Sync all registered workflows with Galaxy on startup.
+
+        For each workflow in the registry, ensures the Galaxy copy matches the
+        local .ga file version. Updates in-place if versions differ, imports
+        fresh if missing. Errors are logged but do not prevent API startup
+        (consistent with the existing graceful degradation pattern).
+        """
+        if not self.workflow_registry:
+            logger.debug("No workflows registered, skipping sync")
+            return
+
+        logger.info(f"Syncing {len(self.workflow_registry)} workflow(s) with Galaxy...")
+        for name, uuid in self.workflow_registry.items():
+            try:
+                self._ensure_workflow_exists_by_uuid(uuid)
+            except Exception as e:
+                logger.error(f"Failed to sync workflow '{name}': {e}")
     
     def _find_workflow_by_uuid(self, workflow_uuid: str) -> Workflow:
         """
@@ -429,7 +452,53 @@ class GalaxyClient:
             if isinstance(e, (RuntimeError, FileNotFoundError)):
                 raise
             raise RuntimeError(f"Error importing workflow: {e}") from e
-    
+
+    def _get_remote_workflow_version(self, workflow_id: str) -> int:
+        """
+        Fetch the version number of a workflow from Galaxy.
+
+        Args:
+            workflow_id: Galaxy workflow ID
+
+        Returns:
+            Version number (int), defaults to 0 if not available
+
+        Raises:
+            RuntimeError: If not connected to Galaxy
+        """
+        if not self.gi:
+            raise RuntimeError("Not connected to Galaxy. Call connect() first.")
+
+        details = self.gi.gi.workflows.show_workflow(workflow_id)
+        return details.get("version", 0)
+
+    def _update_workflow_from_file(self, workflow_id: str, workflow_file_path: Path) -> None:
+        """
+        Update an existing Galaxy workflow in-place from a local .ga file.
+
+        This preserves the workflow ID so existing invocations and references
+        stay valid (no delete + reimport needed).
+
+        Args:
+            workflow_id: Galaxy workflow ID to update
+            workflow_file_path: Path to the .ga workflow file
+
+        Raises:
+            RuntimeError: If not connected to Galaxy
+            FileNotFoundError: If workflow file not found
+        """
+        if not self.gi:
+            raise RuntimeError("Not connected to Galaxy. Call connect() first.")
+
+        if not workflow_file_path.exists():
+            raise FileNotFoundError(f"Workflow file not found: {workflow_file_path}")
+
+        with open(workflow_file_path, 'r') as f:
+            workflow_data = json.load(f)
+
+        self.gi.gi.workflows.update_workflow(workflow_id, workflow=workflow_data)
+        logger.info(f"Updated workflow {workflow_id} from {workflow_file_path.name}")
+
     def _load_workflow_registry(self):
         """
         Load workflow registry by scanning the workflows directory and reading .ga files.
@@ -571,23 +640,33 @@ class GalaxyClient:
         
         raise FileNotFoundError(f"No workflow file found for UUID '{workflow_uuid}' in {self.workflows_path}")
     
-    def _ensure_workflow_exists_by_uuid(self, workflow_uuid: str, force_update: bool = False) -> Workflow:
+    def _ensure_workflow_exists_by_uuid(self, workflow_uuid: str) -> Workflow:
         """
-        Ensure a workflow exists in Galaxy.
-        
+        Ensure a workflow exists in Galaxy and is up-to-date with the local .ga file.
+
+        Compares the local .ga file's "version" field against the remote Galaxy
+        workflow version. If they differ, the remote workflow is updated in-place
+        (preserving the workflow ID). If the workflow doesn't exist, it is imported.
+
+        The local .ga file is always the source of truth.
+
         Args:
             workflow_uuid: UUID of the workflow to check/import
-            force_update: If True, delete and reimport. If False (default), only import if missing.
-            
+
         Returns:
             Workflow object
-            
+
         Raises:
             RuntimeError: If not connected to Galaxy
-            LookupError: If workflow file not found
+            FileNotFoundError: If workflow file not found
         """
         workflow_file_path = self._find_workflow_file_by_uuid(workflow_uuid)
-        
+
+        # Read local .ga file version
+        with open(workflow_file_path, 'r') as f:
+            local_data = json.load(f)
+        local_version = local_data.get("version", 0)
+
         # Get workflow name from UUID registry
         workflow_name = None
         for name, uuid in self.workflow_registry.items():
@@ -596,24 +675,30 @@ class GalaxyClient:
                 break
 
         try:
-            # Try to find workflow by name (more reliable than UUID)
+            # Try to find workflow by name on Galaxy
             existing_workflow = self._find_workflow_by_name(workflow_name) if workflow_name else None
 
-            if existing_workflow and not force_update:
-                logger.info(f"Workflow '{workflow_name}' already exists in Galaxy (ID: {existing_workflow.id})")
-                return existing_workflow
-            elif existing_workflow and force_update:
-                # Only if explicitly requested
-                logger.warning(f"Force update requested: deleting workflow '{workflow_name}'...")
-                existing_workflow.delete()
-                logger.info(f"Importing fresh workflow from {workflow_file_path}")
-                return self.import_workflow(workflow_file_path)
+            if existing_workflow:
+                # Compare versions
+                remote_version = self._get_remote_workflow_version(existing_workflow.id)
+
+                if remote_version == local_version:
+                    logger.info(f"Workflow '{workflow_name}' is up-to-date (version {local_version})")
+                    return existing_workflow
+                else:
+                    logger.warning(
+                        f"Workflow '{workflow_name}' version mismatch: "
+                        f"Galaxy v{remote_version} -> local v{local_version}. Updating..."
+                    )
+                    self._update_workflow_from_file(existing_workflow.id, workflow_file_path)
+                    # Re-fetch to get updated workflow object
+                    return self._find_workflow_by_name(workflow_name)
 
         except LookupError:
-            pass  # Workflow doesn't exist, import it
+            pass  # Workflow doesn't exist on Galaxy, import it
 
         # Workflow doesn't exist, import it fresh
-        logger.info(f"Workflow '{workflow_name}' not found, importing from {workflow_file_path}")
+        logger.info(f"Workflow '{workflow_name}' not found in Galaxy, importing from {workflow_file_path}")
         return self.import_workflow(workflow_file_path)
     
     def _invoke_workflow_by_uuid(
