@@ -632,6 +632,20 @@ def sync_workflow_statuses(galaxy_client: GalaxyClient, supabase_client: Supabas
                         **update_data,
                     )
 
+                # Safety net: re-promote the current invocation when a workflow
+                # reaches a terminal state.  Creation-time promotion can fail
+                # (deployment races, RPC errors) leaving is_current stale.
+                if workflow_finished and supabase_inv.dataset_id is not None:
+                    try:
+                        supabase_client.promote_current_workflow_invocation(
+                            dataset_id=supabase_inv.dataset_id,
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to promote current invocation for dataset "
+                            f"{supabase_inv.dataset_id} after workflow finished: {e}"
+                        )
+
             except Exception as e:
                 logger.error(f"Error processing invocation {supabase_inv.invocation_id}: {e}")
                 stats['errors'] += 1
