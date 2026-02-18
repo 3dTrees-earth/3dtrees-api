@@ -27,6 +27,7 @@ class SupabaseClient:
         self.url = config.url
         self.key = config.key
         self.service_key = config.service_key
+        self.using_service_role = bool(config.service_key)
         self.email = config.email
         self.password = config.password
         self.datasets_table = config.datasets_table
@@ -35,16 +36,19 @@ class SupabaseClient:
         self.client: Optional[Client] = None
     
     def connect(self) -> bool:
-        if not self.url or not self.key:
-            raise ValueError("Supabase URL and key are required. Set SUPABASE_URL and SUPABASE_KEY in .env file.")
+        if not self.url or not (self.key or self.service_key):
+            raise ValueError(
+                "Supabase URL and key are required. Set SUPABASE_URL and SUPABASE_KEY or SUPABASE_SERVICE_KEY in .env file."
+            )
             
         try:
             logger.debug(f"Connecting to Supabase at {self.url}...")
+            auth_key = self.service_key or self.key
             
             # Create Supabase client (simplified - newer supabase-py doesn't require ClientOptions)
             self.client = create_client(
                 supabase_url=self.url,
-                supabase_key=self.key
+                supabase_key=auth_key
             )
             
             # Test connection by getting user info (if authenticated)
@@ -55,7 +59,10 @@ class SupabaseClient:
                 else:
                     logger.info("Connected to Supabase (anonymous)")
             except Exception:
-                logger.info("Connected to Supabase (anonymous)")
+                if self.using_service_role:
+                    logger.info("Connected to Supabase with service role key")
+                else:
+                    logger.info("Connected to Supabase (anonymous)")
                 
             return True
             

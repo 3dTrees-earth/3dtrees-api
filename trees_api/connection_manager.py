@@ -110,9 +110,10 @@ class ConnectionManager:
                 client = SupabaseClient(self.config.supabase)
                 client.connect()
                 
-                # Try to authenticate (only if email and password are provided)
-                # With service_role key, user auth is optional - the key already has full access
-                if client.email and client.password:
+                # Authenticate only when running without service-role key.
+                # Backend orchestration should prefer service-role auth to avoid
+                # expiring user JWT sessions.
+                if (not client.using_service_role) and client.email and client.password:
                     try:
                         client.authenticate_user(client.email, client.password)
                     except Exception as e:
@@ -129,7 +130,10 @@ class ConnectionManager:
                         else:
                             raise e
                 else:
-                    logger.info("Using Supabase with service key (no user authentication)")
+                    if client.using_service_role:
+                        logger.info("Using Supabase with service key (no user authentication)")
+                    else:
+                        logger.info("Using Supabase without user authentication")
                 
                 # Update state
                 self.supabase.client = client
