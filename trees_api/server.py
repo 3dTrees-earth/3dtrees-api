@@ -346,12 +346,6 @@ def create_job(
     
     logger.info(f"Creating collection workflow job for dataset_id={dataset_id_int} (first_item_id={first_item_id})")
     
-    # Ensure workflow exists
-    try:
-        galaxy.ensure_workflow_available(workflow_name)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Loading Workflow {workflow_name} failed: {e}")
-    
     # Handle overwrite: delete old invocations and history
     if overwrite:
         logger.info(f"Overwrite mode: cleaning up existing data for dataset {dataset_id}")

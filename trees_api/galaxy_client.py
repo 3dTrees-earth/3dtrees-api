@@ -61,6 +61,7 @@ class GalaxyClient:
         self.workflows_path = config.resolved_workflows_path()
         
         self.workflow_registry: Dict[str, str] = {}
+        self._ensured_workflows: Dict[str, "Workflow"] = {}
         self.gi: Optional[GalaxyObjectsInstance] = None
     
     def get_raw_file_source_uri(self, bucket_path: str) -> str:
@@ -799,6 +800,9 @@ class GalaxyClient:
         """
         Ensure a workflow is available in Galaxy (user-facing method).
         
+        Results are cached so repeated calls for the same workflow within
+        a single API request avoid redundant Galaxy round-trips (~20-25 s each).
+        
         Args:
             workflow_name: Name of the workflow
             
@@ -809,11 +813,13 @@ class GalaxyClient:
             KeyError: If workflow name is not registered
             RuntimeError: If workflow cannot be imported
         """
-        # Get UUID from registry
+        if workflow_name in self._ensured_workflows:
+            return self._ensured_workflows[workflow_name]
+
         workflow_uuid = self.get_workflow_uuid(workflow_name)
-        
-        # Ensure workflow exists (will import if needed)
-        return self._ensure_workflow_exists_by_uuid(workflow_uuid)
+        workflow = self._ensure_workflow_exists_by_uuid(workflow_uuid)
+        self._ensured_workflows[workflow_name] = workflow
+        return workflow
     
     def invoke_workflow(
         self,
@@ -1020,9 +1026,6 @@ class GalaxyClient:
         # Add step parameters if provided
         if parameters:
             inputs["parameters"] = parameters
-        
-        # Ensure workflow is available
-        self.ensure_workflow_available(workflow_name)
         
         # Invoke workflow - Galaxy handles deferred fetch
         return self.invoke_workflow(
