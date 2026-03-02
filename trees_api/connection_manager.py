@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional, Any
 from threading import Lock
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict
 
 from trees_api.config import AppConfig
 from trees_api.galaxy_client import GalaxyClient
@@ -15,15 +15,14 @@ logger = logging.getLogger("uvicorn")
 
 class ClientState(BaseModel):
     """State information for a client connection."""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     connected: bool = False
     client: Optional[Any] = None
     last_attempt: Optional[datetime] = None
     last_success: Optional[datetime] = None
     error_message: Optional[str] = None
     retry_count: int = 0
-    
-    class Config:
-        arbitrary_types_allowed = True  # Allow non-Pydantic types like client instances
 
 class ConnectionManager:
     """

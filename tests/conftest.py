@@ -44,6 +44,7 @@ def _ensure_bucket_exists(storage_client: StorageClient) -> None:
         storage_client.bucket_name_raw,
         storage_client.bucket_name_products,
         storage_client.config.bucket_name_visualization,
+        storage_client.bucket_name_download,
     ]
     
     for bucket_name in buckets_to_check:
@@ -337,7 +338,7 @@ def galaxy_client() -> Generator[GalaxyClient, None, None]:
         
     except Exception as e:
         logger.error(f"Failed to setup Galaxy client: {e}")
-        raise
+        pytest.skip(f"Galaxy is unavailable for integration tests: {e}")
 
 
 @pytest.fixture

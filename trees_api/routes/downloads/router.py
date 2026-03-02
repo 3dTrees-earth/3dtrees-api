@@ -5,10 +5,10 @@ import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
-from trees_api.supabase_client import SupabaseClient
+from trees_api.supabase_client import ActiveDownloadRequestExistsError, SupabaseClient
 
 
-logger = logging.getLogger("trees_api.download_router")
+logger = logging.getLogger("trees_api.routes.downloads.router")
 router = APIRouter(prefix="/downloads", tags=["downloads"])
 
 
@@ -60,8 +60,8 @@ def _resolve_user_from_token(supabase: SupabaseClient, token: str) -> Authentica
         return AuthenticatedUser(id=user_id, email=email)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Token validation failed: {e}")
+    except Exception as error:
+        logger.error("Token validation failed: %s", error)
         raise HTTPException(status_code=401, detail="Token validation failed")
 
 
@@ -84,36 +84,41 @@ def create_download_request(
     if not supabase:
         raise HTTPException(status_code=503, detail="Supabase service unavailable")
     if not request.include_raw and not request.include_segmentation:
-        raise HTTPException(status_code=400, detail="At least one artifact type must be requested")
+        raise HTTPException(
+            status_code=400, detail="At least one artifact type must be requested"
+        )
 
     dataset = supabase.get_dataset_with_items(request.dataset_id)
     if not dataset:
-        raise HTTPException(status_code=404, detail=f"Dataset {request.dataset_id} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Dataset {request.dataset_id} not found"
+        )
     if dataset.get("archived"):
-        raise HTTPException(status_code=400, detail=f"Dataset {request.dataset_id} is archived")
+        raise HTTPException(
+            status_code=400, detail=f"Dataset {request.dataset_id} is archived"
+        )
 
     dataset_visibility = dataset.get("visibility")
     dataset_owner_id = dataset.get("user_id")
     if dataset_visibility != "public" and dataset_owner_id != user.id:
-        raise HTTPException(status_code=403, detail="Only the dataset owner can request this download")
+        raise HTTPException(
+            status_code=403, detail="Only the dataset owner can request this download"
+        )
 
-    existing = supabase.find_active_download_request(
-        requested_by=user.id,
-        dataset_id=request.dataset_id,
-        include_raw=request.include_raw,
-        include_segmentation=request.include_segmentation,
-    )
-    if existing:
-        return existing
-
-    created = supabase.create_download_request(
-        dataset_id=request.dataset_id,
-        requested_by=user.id,
-        requester_email=user.email,
-        include_raw=request.include_raw,
-        include_segmentation=request.include_segmentation,
-    )
-    return created
+    try:
+        return supabase.create_or_get_active_download_request(
+            dataset_id=request.dataset_id,
+            requested_by=user.id,
+            requester_email=user.email,
+            include_raw=request.include_raw,
+            include_segmentation=request.include_segmentation,
+        )
+    except ActiveDownloadRequestExistsError as error:
+        logger.warning("Active download intent conflict for user %s: %s", user.id, error)
+        raise HTTPException(
+            status_code=409,
+            detail="An active request for this dataset and download mode already exists",
+        )
 
 
 @router.get("")
@@ -146,3 +151,4 @@ def get_download_request(
     if not row or row.get("requested_by") != user.id:
         raise HTTPException(status_code=404, detail="Download request not found")
     return row
+

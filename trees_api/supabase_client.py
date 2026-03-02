@@ -14,6 +14,10 @@ from trees_api.config import SupabaseConfig
 logger = logging.getLogger("uvicorn")
 
 
+class ActiveDownloadRequestExistsError(RuntimeError):
+    """Raised when DB-level unique-active intent constraint is violated."""
+
+
 class SupabaseClient:
     """Supabase client for 3DTrees API."""
     
@@ -1120,7 +1124,57 @@ class SupabaseClient:
                 raise RuntimeError("Insert returned no data")
             return response.data[0]
         except Exception as e:
+            error_text = str(e).lower()
+            if (
+                "duplicate key value" in error_text
+                and "unique_active_intent" in error_text
+            ):
+                raise ActiveDownloadRequestExistsError(
+                    "An active download request already exists for this intent"
+                ) from e
             raise RuntimeError(f"Failed to create download request: {e}") from e
+
+    def create_or_get_active_download_request(
+        self,
+        dataset_id: int,
+        requested_by: str,
+        requester_email: str,
+        include_raw: bool,
+        include_segmentation: bool,
+    ) -> Dict[str, Any]:
+        """
+        Create a request or return an already active request for the same intent.
+
+        DB-level race safety relies on a partial unique index over active statuses.
+        """
+        existing = self.find_active_download_request(
+            requested_by=requested_by,
+            dataset_id=dataset_id,
+            include_raw=include_raw,
+            include_segmentation=include_segmentation,
+        )
+        if existing:
+            return existing
+
+        try:
+            return self.create_download_request(
+                dataset_id=dataset_id,
+                requested_by=requested_by,
+                requester_email=requester_email,
+                include_raw=include_raw,
+                include_segmentation=include_segmentation,
+            )
+        except ActiveDownloadRequestExistsError:
+            # Another request won the race; return the current active row.
+            raced = self.find_active_download_request(
+                requested_by=requested_by,
+                dataset_id=dataset_id,
+                include_raw=include_raw,
+                include_segmentation=include_segmentation,
+            )
+            if raced:
+                return raced
+            raise
 
     def find_active_download_request(
         self,

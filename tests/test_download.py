@@ -87,6 +87,31 @@ def test_download_request_create_and_list(api_client: TestClient, supabase_clien
         assert created["include_segmentation"] is False
         assert created["status"] == "pending"
 
+        duplicate_response = api_client.post(
+            "/downloads",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "dataset_id": dataset.id,
+                "include_raw": True,
+                "include_segmentation": False,
+            },
+        )
+        assert duplicate_response.status_code == 200, duplicate_response.text
+        duplicate_row = duplicate_response.json()
+        assert duplicate_row["id"] == created_request_id
+
+        active_rows = (
+            supabase_client.client.table("download_requests")
+            .select("id")
+            .eq("requested_by", created["requested_by"])
+            .eq("dataset_id", dataset.id)
+            .eq("include_raw", True)
+            .eq("include_segmentation", False)
+            .in_("status", ["pending", "processing"])
+            .execute()
+        )
+        assert len(active_rows.data or []) == 1
+
         list_response = api_client.get(
             "/downloads",
             headers={"Authorization": f"Bearer {token}"},

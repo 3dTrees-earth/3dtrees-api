@@ -59,7 +59,14 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-asyncio_mode = "auto" 
 markers = [
     "external: marks tests that call external services (disabled by default)",
+]
+filterwarnings = [
+    # Third-party dependency deprecations outside this repository's direct code.
+    "ignore:'asyncio\\.iscoroutinefunction' is deprecated.*:DeprecationWarning:supabase_auth\\.timer",
+    "ignore:The 'timeout' parameter is deprecated.*:DeprecationWarning:supabase\\._sync\\.client",
+    "ignore:The 'verify' parameter is deprecated.*:DeprecationWarning:supabase\\._sync\\.client",
+    "ignore:websockets\\.legacy is deprecated.*:DeprecationWarning:websockets\\.legacy",
+    "ignore:websockets\\.server\\.WebSocketServerProtocol is deprecated.*:DeprecationWarning:uvicorn\\.protocols\\.websockets\\.websockets_impl",
 ]

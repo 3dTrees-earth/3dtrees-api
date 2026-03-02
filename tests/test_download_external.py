@@ -10,7 +10,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from trees_api import download_worker
+from trees_api.routes.downloads import worker as download_worker
 from trees_api.storage_client import StorageClient
 from trees_api.supabase_client import SupabaseClient
 
