@@ -4,28 +4,28 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends
 
-from trees_api.galaxy_client import GalaxyClient
+from trees_api.integrations.galaxy.client import GalaxyClient
 from trees_api.routes.jobs import service
-from trees_api.storage_client import StorageClient
-from trees_api.supabase_client import SupabaseClient
+from trees_api.integrations.storage.client import StorageClient
+from trees_api.integrations.supabase.client import SupabaseClient
 
 router = APIRouter(tags=["jobs"])
 
 
 def get_galaxy_client() -> Optional[GalaxyClient]:
-    from trees_api.connection_manager import connection_manager
+    from trees_api.app.connection_manager import connection_manager
 
     return connection_manager.get_galaxy_client()
 
 
 def get_supabase_client() -> Optional[SupabaseClient]:
-    from trees_api.connection_manager import connection_manager
+    from trees_api.app.connection_manager import connection_manager
 
     return connection_manager.get_supabase_client()
 
 
 def get_storage_client() -> Optional[StorageClient]:
-    from trees_api.connection_manager import connection_manager
+    from trees_api.app.connection_manager import connection_manager
 
     return connection_manager.get_storage_client()
 

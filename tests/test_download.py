@@ -6,7 +6,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from trees_api.supabase_client import SupabaseClient
+from trees_api.integrations.supabase.client import SupabaseClient
 
 
 def _get_access_token() -> str:
@@ -40,8 +40,8 @@ def _get_access_token() -> str:
 @pytest.fixture(scope="module")
 def api_client(supabase_client: SupabaseClient) -> TestClient:
     """Create FastAPI test client with Supabase dependency available."""
-    from trees_api.server import app
-    from trees_api.connection_manager import connection_manager
+    from trees_api.app.connection_manager import connection_manager
+    from trees_api.app.server import app
 
     connection_manager.supabase.client = supabase_client
     connection_manager.supabase.connected = True

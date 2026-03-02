@@ -8,10 +8,10 @@ from uuid import uuid4
 import pytest
 from botocore.exceptions import ClientError
 
-from trees_api.config import StorageConfig, SupabaseConfig
-from trees_api.history_sync import sync_history_for_invocation
-from trees_api.storage_client import StorageClient
-from trees_api.supabase_client import SupabaseClient
+from trees_api.core.config import StorageConfig, SupabaseConfig
+from trees_api.integrations.storage.client import StorageClient
+from trees_api.integrations.supabase.client import SupabaseClient
+from trees_api.workers.history_sync import sync_history_for_invocation
 
 
 def _upload_json(storage_client: StorageClient, key: str, payload: dict, bucket: str) -> None:

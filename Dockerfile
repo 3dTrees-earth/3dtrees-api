@@ -13,4 +13,4 @@ ENV GIT_SHA=$GIT_SHA
 ENV BUILD_TIME=$BUILD_TIME
 
 WORKDIR /src
-CMD ["python", "trees_api/server.py"]
+CMD ["python", "-m", "trees_api.app.server"]

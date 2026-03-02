@@ -6,11 +6,11 @@ from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError
 
-from trees_api.config import GalaxyConfig, SupabaseConfig, StorageConfig
-from trees_api.galaxy_client import GalaxyClient
-from trees_api.storage_client import StorageClient
-from trees_api.supabase_client import SupabaseClient
-from trees_api.models import Dataset
+from trees_api.core.config import GalaxyConfig, SupabaseConfig, StorageConfig
+from trees_api.core.models import Dataset
+from trees_api.integrations.galaxy.client import GalaxyClient
+from trees_api.integrations.storage.client import StorageClient
+from trees_api.integrations.supabase.client import SupabaseClient
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

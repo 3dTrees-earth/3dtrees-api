@@ -13,8 +13,12 @@ from typing import Optional
 import pytest
 from dotenv import load_dotenv
 
-from trees_api.config import LinearConfig
-from trees_api.linear_client import FailedJob, LinearClient, create_linear_client_if_enabled
+from trees_api.core.config import LinearConfig
+from trees_api.integrations.linear.client import (
+    FailedJob,
+    LinearClient,
+    create_linear_client_if_enabled,
+)
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

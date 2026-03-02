@@ -17,14 +17,14 @@ The status pooler only:
 
 Usage:
     # Run once (cron mode)
-    python status.py
-    
+    python -m trees_api.workers.status_pooler
+
     # Run continuously (daemon mode for testing)
-    python status.py --continuous
-    python status.py --continuous --interval 10
-    
+    python -m trees_api.workers.status_pooler --continuous
+    python -m trees_api.workers.status_pooler --continuous --interval 10
+
     # Run from Docker container (as cronjob)
-    docker compose run api python status.py
+    docker compose run api python -m trees_api.workers.status_pooler
 
 Environment Variables Required:
     - GALAXY_URL, GALAXY_EMAIL, GALAXY_PASSWORD (or GALAXY_API_KEY)
@@ -37,18 +37,14 @@ import sys
 import logging
 import time
 import os
-from pathlib import Path
 
-# Add the current directory to Python path to import local modules
-sys.path.insert(0, str(Path(__file__).parent))
-
-from trees_api.galaxy_client import GalaxyClient
-from trees_api.supabase_client import SupabaseClient
-from trees_api.storage_client import StorageClient
-from trees_api.config import GalaxyConfig, SupabaseConfig, StorageConfig
-from trees_api.status_sync import sync_workflow_statuses
-from trees_api.history_sync import sync_history_outputs
-from trees_api.supabase_log_handler import setup_supabase_logging
+from trees_api.integrations.galaxy.client import GalaxyClient
+from trees_api.integrations.supabase.client import SupabaseClient
+from trees_api.integrations.storage.client import StorageClient
+from trees_api.core.config import GalaxyConfig, SupabaseConfig, StorageConfig
+from trees_api.workers.status_sync import sync_workflow_statuses
+from trees_api.workers.history_sync import sync_history_outputs
+from trees_api.integrations.supabase.log_handler import setup_supabase_logging
 # Note: result_sync is NOT imported - Galaxy export tool writes outputs directly to S3
 # so we don't need to download from Galaxy history and re-upload
 

@@ -8,7 +8,7 @@ from trees_api.routes.downloads.router import (
     get_supabase_client,
     router,
 )
-from trees_api.supabase_client import ActiveDownloadRequestExistsError
+from trees_api.integrations.supabase.client import ActiveDownloadRequestExistsError
 
 
 class _FakeSupabase:

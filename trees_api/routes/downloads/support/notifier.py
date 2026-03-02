@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timezone
 
-import httpx
+from trees_api.integrations.notifications.client import (
+    BrevoEmailConfig,
+    EmailMessage,
+    EmailRecipient,
+    send_email_via_brevo,
+)
 
-
-@dataclass(frozen=True)
-class BrevoEmailConfig:
-    api_url: str
-    api_key: str
-    sender_email: str
-    sender_name: str
 
 
 def _build_download_email_subject(archive_filename: str) -> str:
@@ -86,37 +83,25 @@ def send_download_ready_email(
     dataset_title: str,
     signed_url_expires_at: datetime,
 ) -> None:
-    if not config.api_key:
-        raise RuntimeError("BREVO_API_KEY is not configured")
-
-    payload = {
-        "sender": {"email": config.sender_email, "name": config.sender_name},
-        "to": [{"email": to_email}],
-        "subject": _build_download_email_subject(archive_filename),
-        "htmlContent": _build_download_email_html(
+    message = EmailMessage(
+        subject=_build_download_email_subject(archive_filename),
+        to=[EmailRecipient(email=to_email)],
+        html_content=_build_download_email_html(
             archive_filename=archive_filename,
             signed_url=signed_url,
             dataset_id=dataset_id,
             dataset_title=dataset_title,
             expires_at=signed_url_expires_at,
         ),
-        "textContent": _build_download_email_text(
+        text_content=_build_download_email_text(
             archive_filename=archive_filename,
             signed_url=signed_url,
             dataset_id=dataset_id,
             dataset_title=dataset_title,
             expires_at=signed_url_expires_at,
         ),
-    }
-    headers = {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "api-key": config.api_key,
-    }
-
-    with httpx.Client(timeout=30.0) as client:
-        response = client.post(config.api_url, headers=headers, json=payload)
-        response.raise_for_status()
+    )
+    send_email_via_brevo(config=config, message=message)
 
 
 __all__ = ["BrevoEmailConfig", "send_download_ready_email"]

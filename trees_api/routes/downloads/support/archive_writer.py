@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from trees_api.routes.downloads.support.source_resolution import ArchiveSource
-from trees_api.storage_client import StorageClient
+from trees_api.integrations.storage.client import StorageClient
 
 
 def write_download_archive(

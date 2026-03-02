@@ -15,8 +15,8 @@ import logging
 from typing import Dict, Optional, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from trees_api.galaxy_client import GalaxyClient
-    from trees_api.supabase_client import SupabaseClient
+    from trees_api.integrations.galaxy.client import GalaxyClient
+    from trees_api.integrations.supabase.client import SupabaseClient
 
 logger = logging.getLogger("uvicorn")
 

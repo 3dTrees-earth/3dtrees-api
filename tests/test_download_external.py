@@ -10,9 +10,9 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from trees_api.integrations.storage.client import StorageClient
+from trees_api.integrations.supabase.client import SupabaseClient
 from trees_api.routes.downloads import worker as download_worker
-from trees_api.storage_client import StorageClient
-from trees_api.supabase_client import SupabaseClient
 
 
 pytestmark = pytest.mark.external
@@ -48,8 +48,8 @@ def _brevo_logs_url() -> str:
 
 @pytest.fixture(scope="module")
 def api_client(supabase_client: SupabaseClient) -> TestClient:
-    from trees_api.server import app
-    from trees_api.connection_manager import connection_manager
+    from trees_api.app.connection_manager import connection_manager
+    from trees_api.app.server import app
 
     connection_manager.supabase.client = supabase_client
     connection_manager.supabase.connected = True

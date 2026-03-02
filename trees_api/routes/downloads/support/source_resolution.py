@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from trees_api.storage_client import StorageClient
+from trees_api.integrations.storage.client import StorageClient
 
 
 @dataclass(frozen=True)

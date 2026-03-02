@@ -21,24 +21,22 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from trees_api.config import StorageConfig, SupabaseConfig
+from trees_api.core.config import StorageConfig, SupabaseConfig
+from trees_api.integrations.notifications.client import BrevoEmailConfig
 from trees_api.routes.downloads.support.archive_writer import write_download_archive
 from trees_api.routes.downloads.support.metadata_enrichment import (
     build_license_note,
     build_metadata_model,
     build_readme,
 )
-from trees_api.routes.downloads.support.notifier import (
-    BrevoEmailConfig,
-    send_download_ready_email,
-)
+from trees_api.routes.downloads.support.notifier import send_download_ready_email
 from trees_api.routes.downloads.support.source_resolution import (
     archive_filename,
     archive_root,
     build_archive_sources,
 )
-from trees_api.storage_client import StorageClient
-from trees_api.supabase_client import SupabaseClient
+from trees_api.integrations.storage.client import StorageClient
+from trees_api.integrations.supabase.client import SupabaseClient
 
 
 logging.basicConfig(

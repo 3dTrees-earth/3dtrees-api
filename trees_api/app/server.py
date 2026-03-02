@@ -9,9 +9,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from trees_api.connection_manager import ConnectionManager
+from trees_api.app.connection_manager import ConnectionManager
 from trees_api.core.config import AppConfig
-from trees_api.galaxy_client import GalaxyClient
+from trees_api.integrations.galaxy.client import GalaxyClient
 from trees_api.integrations.storage.client import StorageClient
 from trees_api.integrations.supabase.client import SupabaseClient
 from trees_api.integrations.supabase.log_handler import setup_supabase_logging
@@ -222,7 +222,7 @@ def main() -> None:
 
     settings = APIServerSettings()
     uvicorn.run(
-        "trees_api.server:app",
+        "trees_api.app.server:app",
         host=settings.host,
         port=settings.port,
         reload=settings.reload,

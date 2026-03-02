@@ -5,7 +5,10 @@ import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
-from trees_api.supabase_client import ActiveDownloadRequestExistsError, SupabaseClient
+from trees_api.integrations.supabase.client import (
+    ActiveDownloadRequestExistsError,
+    SupabaseClient,
+)
 
 
 logger = logging.getLogger("trees_api.routes.downloads.router")
@@ -24,7 +27,7 @@ class CreateDownloadRequest(BaseModel):
 
 
 def get_supabase_client() -> Optional[SupabaseClient]:
-    from trees_api.connection_manager import connection_manager
+    from trees_api.app.connection_manager import connection_manager
 
     return connection_manager.get_supabase_client()
 

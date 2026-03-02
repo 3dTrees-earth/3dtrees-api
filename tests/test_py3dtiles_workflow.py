@@ -18,10 +18,10 @@ import time
 import pytest
 import requests
 
-from trees_api.models import Dataset
-from trees_api.galaxy_client import GalaxyClient
-from trees_api.storage_client import StorageClient
-from trees_api.supabase_client import SupabaseClient
+from trees_api.core.models import Dataset
+from trees_api.integrations.galaxy.client import GalaxyClient
+from trees_api.integrations.storage.client import StorageClient
+from trees_api.integrations.supabase.client import SupabaseClient
 
 logger = logging.getLogger(__name__)
 API_PORT = os.getenv("API_SERVER_PORT", "8001")
@@ -102,7 +102,7 @@ def _run_py3dtiles_workflow_test(
         
         try:
             # Run status sync (simulates the cronjob)
-            from trees_api.status import sync_workflow_statuses
+            from trees_api.workers.status_sync import sync_workflow_statuses
             sync_workflow_statuses(galaxy_client, supabase_client)
             
             # Check Supabase DB for updated status

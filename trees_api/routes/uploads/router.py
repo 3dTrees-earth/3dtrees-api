@@ -5,7 +5,7 @@ from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from trees_api.storage_client import UploaderStorageClient
+from trees_api.integrations.storage.client import UploaderStorageClient
 
 logger = logging.getLogger("trees_api.routes.uploads.router")
 
@@ -65,7 +65,7 @@ class ListPartsResponse(BaseModel):
 
 
 def get_uploader_storage() -> Optional[UploaderStorageClient]:
-    from trees_api.connection_manager import connection_manager
+    from trees_api.app.connection_manager import connection_manager
 
     return connection_manager.get_uploader_storage_client()
 

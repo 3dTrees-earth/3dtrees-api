@@ -5,11 +5,12 @@ import uvicorn
 import threading
 from pathlib import Path
 
-from trees_api.models import Dataset
-from trees_api.galaxy_client import GalaxyClient
-from trees_api.storage_client import StorageClient
-from trees_api.supabase_client import SupabaseClient
-from trees_api.status import sync_workflow_statuses, get_connected_clients
+from trees_api.core.models import Dataset
+from trees_api.integrations.galaxy.client import GalaxyClient
+from trees_api.integrations.storage.client import StorageClient
+from trees_api.integrations.supabase.client import SupabaseClient
+from trees_api.workers.status_pooler import get_connected_clients
+from trees_api.workers.status_sync import sync_workflow_statuses
 
 
 def test_workflow_via_api_with_status_sync(test_remote_file: Dataset, galaxy_client: GalaxyClient, storage_client: StorageClient, supabase_client: SupabaseClient):
@@ -23,7 +24,7 @@ def test_workflow_via_api_with_status_sync(test_remote_file: Dataset, galaxy_cli
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
     
-    from trees_api.server import app
+    from trees_api.app.server import app
     
     # Start API server in a separate thread
     def run_server():
@@ -134,7 +135,7 @@ def test_api_health_check():
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent))
     
-    from trees_api.server import app
+    from trees_api.app.server import app
     
     # Start API server in a separate thread
     def run_server():

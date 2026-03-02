@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 
 def test_api_routes_are_wired():
-    from trees_api.server import app
+    from trees_api.app.server import app
 
     paths = {route.path for route in app.routes}
     assert "/" in paths
@@ -14,7 +14,7 @@ def test_api_routes_are_wired():
 
 
 def test_jobs_endpoint_returns_503_when_dependencies_unavailable():
-    from trees_api.server import app
+    from trees_api.app.server import app
     from trees_api.routes.jobs.router import (
         get_galaxy_client,
         get_storage_client,

@@ -5,10 +5,10 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
-from trees_api.galaxy_client import GalaxyClient
-from trees_api.storage_client import StorageClient
-from trees_api.supabase_client import SupabaseClient
-from trees_api.workflow_config import build_workflow_parameters
+from trees_api.core.workflow_config import build_workflow_parameters
+from trees_api.integrations.galaxy.client import GalaxyClient
+from trees_api.integrations.storage.client import StorageClient
+from trees_api.integrations.supabase.client import SupabaseClient
 
 logger = logging.getLogger("trees_api.routes.jobs.service")
 
