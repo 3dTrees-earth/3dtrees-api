@@ -991,3 +991,290 @@ class SupabaseClient:
         except Exception as e:
             logger.error(f"Error deleting galaxy_history for dataset {dataset_id}: {e}")
             raise RuntimeError(f"Failed to delete galaxy_history: {e}") from e
+
+    # =========================================================================
+    # Download requests
+    # =========================================================================
+
+    def get_dataset_with_items(self, dataset_id: int) -> Optional[Dict[str, Any]]:
+        """Get dataset row with nested dataset_items for download packaging."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("datasets")
+                .select("id, uuid, user_id, title, visibility, archived, dataset_items(id, file_name, bucket_path, file_size_bytes)")
+                .eq("id", dataset_id)
+                .limit(1)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(f"Failed to get dataset {dataset_id} with items: {e}") from e
+
+    def get_current_workflow_invocation_for_dataset(self, dataset_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get the current workflow invocation row for a dataset.
+
+        Falls back to the latest row if no explicit current row exists.
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        select_fields = (
+            "id, invocation_id, workflow_name, status, created_at, started_at, finished_at, "
+            "parameters, dataset_id, is_current, history_fk"
+        )
+
+        try:
+            current = (
+                self.client.table("galaxy_workflow_invocations")
+                .select(select_fields)
+                .eq("dataset_id", dataset_id)
+                .eq("is_current", True)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if current.data:
+                return current.data[0]
+
+            latest = (
+                self.client.table("galaxy_workflow_invocations")
+                .select(select_fields)
+                .eq("dataset_id", dataset_id)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            return latest.data[0] if latest.data else None
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to get current workflow invocation for dataset {dataset_id}: {e}"
+            ) from e
+
+    def get_segmentation_rows_for_items(self, dataset_item_ids: List[int]) -> Dict[int, Dict[str, Any]]:
+        """Get segmentation metadata rows keyed by dataset_item_id."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        if not dataset_item_ids:
+            return {}
+
+        try:
+            response = (
+                self.client.table("segmentations")
+                .select("dataset_item_id, url, segmentation_process_duration_minutes")
+                .in_("dataset_item_id", dataset_item_ids)
+                .execute()
+            )
+            rows = response.data or []
+            return {int(row["dataset_item_id"]): row for row in rows if row.get("dataset_item_id") is not None}
+        except Exception as e:
+            raise RuntimeError(f"Failed to get segmentation rows for items: {e}") from e
+
+    def get_standardization_rows_for_items(self, dataset_item_ids: List[int]) -> Dict[int, Dict[str, Any]]:
+        """Get LAS/standardization metadata rows keyed by dataset_item_id."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        if not dataset_item_ids:
+            return {}
+
+        try:
+            response = (
+                self.client.table("las")
+                .select("dataset_item_id, standard_process_duration_minutes, coordinate_reference")
+                .in_("dataset_item_id", dataset_item_ids)
+                .execute()
+            )
+            rows = response.data or []
+            return {int(row["dataset_item_id"]): row for row in rows if row.get("dataset_item_id") is not None}
+        except Exception as e:
+            raise RuntimeError(f"Failed to get standardization rows for items: {e}") from e
+
+    def create_download_request(
+        self,
+        dataset_id: int,
+        requested_by: str,
+        requester_email: str,
+        include_raw: bool,
+        include_segmentation: bool,
+    ) -> Dict[str, Any]:
+        """Create a download request row."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        payload = {
+            "dataset_id": dataset_id,
+            "requested_by": requested_by,
+            "requester_email": requester_email,
+            "include_raw": include_raw,
+            "include_segmentation": include_segmentation,
+            "status": "pending",
+            "metadata": {},
+        }
+
+        try:
+            response = self.client.table("download_requests").insert(payload).execute()
+            if not response.data:
+                raise RuntimeError("Insert returned no data")
+            return response.data[0]
+        except Exception as e:
+            raise RuntimeError(f"Failed to create download request: {e}") from e
+
+    def find_active_download_request(
+        self,
+        requested_by: str,
+        dataset_id: int,
+        include_raw: bool,
+        include_segmentation: bool,
+    ) -> Optional[Dict[str, Any]]:
+        """Find an existing active request for the same dataset and artifact mode."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("download_requests")
+                .select("*")
+                .eq("requested_by", requested_by)
+                .eq("dataset_id", dataset_id)
+                .eq("include_raw", include_raw)
+                .eq("include_segmentation", include_segmentation)
+                .in_("status", ["pending", "processing"])
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(f"Failed to find active download request: {e}") from e
+
+    def list_download_requests_for_user(
+        self,
+        requested_by: str,
+        dataset_id: Optional[int] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """List download requests for a specific user."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            query = (
+                self.client.table("download_requests")
+                .select("*")
+                .eq("requested_by", requested_by)
+            )
+            if dataset_id is not None:
+                query = query.eq("dataset_id", dataset_id)
+            response = query.order("created_at", desc=True).limit(limit).offset(offset).execute()
+            return response.data or []
+        except Exception as e:
+            raise RuntimeError(f"Failed to list download requests: {e}") from e
+
+    def get_download_request(self, request_id: int) -> Optional[Dict[str, Any]]:
+        """Get a single download request by id."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("download_requests")
+                .select("*")
+                .eq("id", request_id)
+                .limit(1)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(f"Failed to get download request {request_id}: {e}") from e
+
+    def update_download_request(self, request_id: int, **updates) -> Optional[Dict[str, Any]]:
+        """Update a download request row and return the updated record."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        if not updates:
+            return self.get_download_request(request_id)
+
+        update_data: Dict[str, Any] = {}
+        for key, value in updates.items():
+            if hasattr(value, "isoformat"):
+                update_data[key] = value.isoformat()
+            else:
+                update_data[key] = value
+
+        update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        try:
+            response = (
+                self.client.table("download_requests")
+                .update(update_data)
+                .eq("id", request_id)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(f"Failed to update download request {request_id}: {e}") from e
+
+    def claim_next_pending_download_request(self) -> Optional[Dict[str, Any]]:
+        """
+        Atomically-ish claim the next pending request by transitioning to processing.
+
+        Uses compare-and-set (`eq(status, pending)`) on update to avoid duplicate claim.
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("download_requests")
+                .select("*")
+                .eq("status", "pending")
+                .order("created_at")
+                .limit(20)
+                .execute()
+            )
+            candidates = response.data or []
+            now_iso = datetime.now(timezone.utc).isoformat()
+            for row in candidates:
+                claimed = (
+                    self.client.table("download_requests")
+                    .update({
+                        "status": "processing",
+                        "started_at": now_iso,
+                        "updated_at": now_iso,
+                        "failure_code": None,
+                        "failure_reason": None,
+                    })
+                    .eq("id", row["id"])
+                    .eq("status", "pending")
+                    .execute()
+                )
+                if claimed.data:
+                    return claimed.data[0]
+            return None
+        except Exception as e:
+            raise RuntimeError(f"Failed to claim pending download request: {e}") from e
+
+    def list_expired_download_requests(self, now: datetime, limit: int = 200) -> List[Dict[str, Any]]:
+        """List completed requests whose archive retention has expired."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("download_requests")
+                .select("*")
+                .in_("status", ["completed", "failed_email"])
+                .not_.is_("expires_at", "null")
+                .lte("expires_at", now.isoformat())
+                .order("expires_at")
+                .limit(limit)
+                .execute()
+            )
+            return response.data or []
+        except Exception as e:
+            raise RuntimeError(f"Failed to list expired download requests: {e}") from e

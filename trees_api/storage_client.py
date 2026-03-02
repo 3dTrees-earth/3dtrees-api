@@ -32,6 +32,7 @@ class StorageClient:
         self.bucket_name = config.bucket_name
         self.bucket_name_products = config.bucket_name_products
         self.bucket_name_raw = config.bucket_name_raw
+        self.bucket_name_download = config.bucket_name_download
         self.url = config.url
         self.region = config.region
         self.endpoint = config.url  # Alias for consistency with other code
@@ -94,6 +95,17 @@ class StorageClient:
             logger.error(f"Failed to upload file '{key}': {e}")
             raise RuntimeError(f"Failed to upload file '{key}': {e}") from e
 
+    def delete_object(self, key: str, bucket: Optional[str] = None) -> None:
+        """Delete a single object from storage."""
+        if not self.client:
+            raise RuntimeError("Not connected to storage service. Call connect() first.")
+        bucket_name = bucket or self.bucket_name_products
+        try:
+            self.client.delete_object(Bucket=bucket_name, Key=key)
+        except ClientError as e:
+            logger.error(f"Failed to delete object '{key}': {e}")
+            raise RuntimeError(f"Failed to delete object '{key}': {e}") from e
+
     def file_exists(self, key: str, bucket: Optional[str] = None) -> bool:
         """Check if a file exists in storage."""
         if not self.client:
@@ -106,6 +118,26 @@ class StorageClient:
             if e.response['Error']['Code'] == '404':
                 return False
             raise
+
+    def generate_presigned_download_url(
+        self,
+        key: str,
+        expires_in: int = 7 * 24 * 60 * 60,
+        bucket: Optional[str] = None,
+    ) -> str:
+        """Generate a presigned GET URL for downloading an object."""
+        if not self.client:
+            raise RuntimeError("Not connected to storage service. Call connect() first.")
+        bucket_name = bucket or self.bucket_name_download
+        try:
+            return self.client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket_name, "Key": key},
+                ExpiresIn=expires_in,
+            )
+        except ClientError as e:
+            logger.error(f"Failed to generate presigned URL for '{key}': {e}")
+            raise RuntimeError(f"Failed to generate presigned URL for '{key}': {e}") from e
 
     def download_json(self, key: str, bucket: Optional[str] = None) -> dict:
         """Download and parse a JSON file from storage."""

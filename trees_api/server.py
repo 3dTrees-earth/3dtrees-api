@@ -17,6 +17,7 @@ from trees_api.supabase_client import SupabaseClient
 from trees_api.storage_client import StorageClient
 from trees_api.connection_manager import ConnectionManager
 from trees_api.upload_router import router as upload_router
+from trees_api.download_router import router as download_router
 from trees_api.workflow_config import build_workflow_parameters
 from trees_api.supabase_log_handler import setup_supabase_logging
 
@@ -139,6 +140,7 @@ app.add_middleware(
 
 # Register routers
 app.include_router(upload_router)
+app.include_router(download_router)
 
 # Pydantic models for request/response
 class JobCreateRequest(BaseModel):

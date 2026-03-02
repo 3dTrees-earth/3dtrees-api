@@ -140,7 +140,7 @@ class SupabaseConfig(BaseSettings):
 class StorageConfig(BaseSettings):
     """S3/MinIO storage configuration.
     
-    Supports separate credentials for processor (read raw, write products/visualization) 
+    Supports separate credentials for processor (read raw, write products/visualization/downloads)
     and uploader (write raw for frontend uploads).
     
     For production, set environment variables:
@@ -148,6 +148,7 @@ class StorageConfig(BaseSettings):
         STORAGE_BUCKET_NAME_RAW=frct-3dtrees-raw
         STORAGE_BUCKET_NAME_PRODUCTS=frct-3dtrees-products
         STORAGE_BUCKET_NAME_VISUALIZATION=frct-3dtrees-visualization
+        STORAGE_BUCKET_NAME_DOWNLOAD=frct-3dtrees-downloads
         STORAGE_REGION=fr1-ec82
         
         # Processor credentials (read raw, write products/visualization)
@@ -176,6 +177,7 @@ class StorageConfig(BaseSettings):
     bucket_name_products: str = Field(default="3dtrees-products", description="Products bucket name")
     bucket_name_raw: str = Field(default="3dtrees-raw", description="Raw data bucket name")
     bucket_name_visualization: str = Field(default="3dtrees-visualization", description="Visualization bucket name (3dtiles, overviews - public)")
+    bucket_name_download: str = Field(default="3dtrees-downloads", description="Private download bucket name (zip archives)")
     url: str = Field(default="http://localhost:9500", description="Storage endpoint URL")
     region: str = Field(default="us-east-1", description="Storage region")
     
@@ -227,6 +229,16 @@ class StorageConfig(BaseSettings):
             Products bucket name
         """
         return self.bucket_name_products
+
+    @property
+    def download_bucket(self) -> str:
+        """
+        Get download bucket name for convenience.
+
+        Returns:
+            Download bucket name
+        """
+        return self.bucket_name_download
 
 
 class APIConfig(BaseSettings):
