@@ -55,18 +55,23 @@ class SupabaseClient:
                 supabase_key=auth_key
             )
             
-            # Test connection by getting user info (if authenticated)
+            # Test connection by getting user info (if authenticated user session exists).
+            # For backend key-based access there is usually no user session, so avoid
+            # logging this as "anonymous" to prevent confusion.
             try:
                 user = self.client.auth.get_user()
                 if user:
                     logger.info(f"Connected to Supabase as user: {user.user.email}")
                 else:
-                    logger.info("Connected to Supabase (anonymous)")
+                    if self.using_service_role:
+                        logger.info("Connected to Supabase with service role key (no user session)")
+                    else:
+                        logger.info("Connected to Supabase with API key (no user session)")
             except Exception:
                 if self.using_service_role:
                     logger.info("Connected to Supabase with service role key")
                 else:
-                    logger.info("Connected to Supabase (anonymous)")
+                    logger.info("Connected to Supabase with API key")
                 
             return True
             

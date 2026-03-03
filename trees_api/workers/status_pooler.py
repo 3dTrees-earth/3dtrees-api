@@ -81,14 +81,17 @@ def get_connected_clients():
     galaxy_client.connect()
     
     supabase_client.connect()
-    try:
-        supabase_client.authenticate_user(supabase_client.email, supabase_client.password)
-    except Exception as e:
-        if "Authentication failed" in str(e):
-            supabase_client.register_user(supabase_client.email, supabase_client.password)
-            logger.info(f"New user created: {supabase_client.email}")
-        else:
-            raise e
+    if supabase_client.using_service_role:
+        logger.info("Using Supabase service role key; skipping user authentication")
+    else:
+        try:
+            supabase_client.authenticate_user(supabase_client.email, supabase_client.password)
+        except Exception as e:
+            if "Authentication failed" in str(e):
+                supabase_client.register_user(supabase_client.email, supabase_client.password)
+                logger.info(f"New user created: {supabase_client.email}")
+            else:
+                raise e
     
     # Set up Supabase logging
     setup_supabase_logging(supabase_client.client, source="status_pooler")

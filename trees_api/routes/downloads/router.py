@@ -45,7 +45,11 @@ def _parse_bearer_token(authorization: Optional[str]) -> str:
 
 
 def _resolve_user_from_token(supabase: SupabaseClient, token: str) -> AuthenticatedUser:
-    api_key = supabase.service_key or supabase.key
+    # GoTrue /auth endpoints validate user tokens against the project API key
+    # (anon/publishable), not the service role key.
+    api_key = supabase.key
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Supabase API key is not configured")
     headers = {
         "apikey": api_key,
         "Authorization": f"Bearer {token}",
