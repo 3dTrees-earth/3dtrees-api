@@ -26,10 +26,12 @@ def _build_download_email_html(
 ) -> str:
     expires_text = expires_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     dataset_url = f"https://3dtrees.earth/datasets/{dataset_id}"
+    account_downloads_url = "https://3dtrees.earth/account?tab=downloads"
     safe_dataset_title = html.escape(dataset_title, quote=True)
     safe_archive_filename = html.escape(archive_filename, quote=True)
     safe_signed_url = html.escape(signed_url, quote=True)
     safe_dataset_url = html.escape(dataset_url, quote=True)
+    safe_account_downloads_url = html.escape(account_downloads_url, quote=True)
     safe_expires_text = html.escape(expires_text, quote=True)
     return (
         '<div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">'
@@ -49,6 +51,12 @@ def _build_download_email_html(
         f"<strong>Expires:</strong> {safe_expires_text}"
         "</p>"
         '<p style="margin-top: 12px;">'
+        f'Account downloads: <a href="{safe_account_downloads_url}">{safe_account_downloads_url}</a>'
+        "</p>"
+        '<p style="margin-top: 8px;">'
+        "If the button above does not open directly, copy the download URL from this email and open it in your browser."
+        "</p>"
+        '<p style="margin-top: 8px;">'
         f'Dataset page: <a href="{safe_dataset_url}">{safe_dataset_url}</a>'
         "</p>"
         '<hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">'
@@ -69,12 +77,14 @@ def _build_download_email_text(
 ) -> str:
     expires_text = expires_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     dataset_url = f"https://3dtrees.earth/datasets/{dataset_id}"
+    account_downloads_url = "https://3dtrees.earth/account?tab=downloads"
     return (
         "Your 3Dtrees download is ready.\n\n"
         f"Dataset: {dataset_id} ({dataset_title})\n"
         f"Archive: {archive_filename}\n"
         f"Expires: {expires_text}\n\n"
         f"Download: {signed_url}\n"
+        f"Account downloads: {account_downloads_url}\n"
         f"Dataset page: {dataset_url}\n"
     )
 
