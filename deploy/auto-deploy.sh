@@ -11,7 +11,8 @@ PROJECT_ROOT_DEFAULT="$(cd "$API_DIR/.." && pwd)"
 PROJECT_ROOT="${PROJECT_ROOT:-$PROJECT_ROOT_DEFAULT}"
 BRANCH="${BRANCH:-main}"
 COMPOSE_FILE="${COMPOSE_FILE:-$SCRIPT_DIR/docker-compose.api.prod.yml}"
-LOG_FILE="${LOG_FILE:-$PROJECT_ROOT/auto-deploy.log}"
+ENV_FILE="${ENV_FILE:-$API_DIR/.env}"
+LOG_FILE="${LOG_FILE:-$SCRIPT_DIR/auto-deploy.log}"
 LOCK_FILE="${LOCK_FILE:-/tmp/3dtrees-api-auto-deploy.lock}"
 DEPLOY_SERVICES="${DEPLOY_SERVICES:-api status-pooler download-worker}"
 
@@ -29,6 +30,11 @@ fi
 
 if [[ ! -f "$COMPOSE_FILE" ]]; then
     log "Compose file not found: $COMPOSE_FILE"
+    exit 1
+fi
+
+if [[ ! -f "$ENV_FILE" ]]; then
+    log "Env file not found: $ENV_FILE"
     exit 1
 fi
 
@@ -62,9 +68,9 @@ DEPLOY_ENV="${DEPLOY_ENV:-production}"
 IFS=' ' read -r -a SERVICES <<< "$DEPLOY_SERVICES"
 
 log "Building services: $DEPLOY_SERVICES"
-docker compose -f "$COMPOSE_FILE" build "${SERVICES[@]}" >> "$LOG_FILE" 2>&1
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build "${SERVICES[@]}" >> "$LOG_FILE" 2>&1
 
 log "Starting services: $DEPLOY_SERVICES"
-docker compose -f "$COMPOSE_FILE" up -d "${SERVICES[@]}" >> "$LOG_FILE" 2>&1
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d "${SERVICES[@]}" >> "$LOG_FILE" 2>&1
 
 log "Deployment complete ($(git rev-parse --short HEAD))"
