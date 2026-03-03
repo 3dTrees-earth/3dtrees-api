@@ -57,6 +57,8 @@ BREVO_API_URL = os.environ.get("BREVO_API_URL", "https://api.brevo.com/v3/smtp/e
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
 BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "no-reply@3dtrees.earth")
 BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "3Dtrees")
+BREVO_REPLY_TO_EMAIL = os.environ.get("BREVO_REPLY_TO_EMAIL", "").strip() or None
+BREVO_REPLY_TO_NAME = os.environ.get("BREVO_REPLY_TO_NAME", "").strip() or None
 
 
 def _fail_request(
@@ -318,6 +320,8 @@ def _process_download_request(
                     api_key=BREVO_API_KEY,
                     sender_email=BREVO_SENDER_EMAIL,
                     sender_name=BREVO_SENDER_NAME,
+                    reply_to_email=BREVO_REPLY_TO_EMAIL,
+                    reply_to_name=BREVO_REPLY_TO_NAME,
                 ),
                 to_email=request_row["requester_email"],
                 archive_filename=archive_file_name,

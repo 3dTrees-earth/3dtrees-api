@@ -12,6 +12,8 @@ class BrevoEmailConfig:
     api_key: str
     sender_email: str
     sender_name: str
+    reply_to_email: Optional[str] = None
+    reply_to_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,11 @@ def send_email_via_brevo(*, config: BrevoEmailConfig, message: EmailMessage) -> 
         "htmlContent": message.html_content,
         "textContent": message.text_content,
     }
+    if config.reply_to_email:
+        payload["replyTo"] = {
+            "email": config.reply_to_email,
+            **({"name": config.reply_to_name} if config.reply_to_name else {}),
+        }
     headers = {
         "accept": "application/json",
         "content-type": "application/json",
