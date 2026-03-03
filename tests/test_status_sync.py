@@ -1,7 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from trees_api.status_sync import (
+from trees_api.workers.status_sync import (
     _all_expected_steps_terminal,
     _build_step_terminal_map,
     _determine_workflow_completion,

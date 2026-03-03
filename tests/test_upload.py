@@ -11,7 +11,7 @@ This module tests all 5 multipart upload endpoints:
 
 import pytest
 from fastapi.testclient import TestClient
-from trees_api.storage_client import StorageClient
+from trees_api.integrations.storage.client import StorageClient
 import logging
 
 logger = logging.getLogger(__name__)
@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 @pytest.fixture(scope="module")
 def api_client(storage_client: StorageClient):
     """Create FastAPI test client with proper dependency overrides."""
-    from trees_api.server import app
-    from trees_api.connection_manager import connection_manager
+    from trees_api.app.connection_manager import connection_manager
+    from trees_api.app.server import app
     
     # Ensure storage client is connected
     if not storage_client.client:

@@ -2,8 +2,8 @@ from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 
-from trees_api.models import WorkflowInvocation, WorkflowName
-from trees_api.status_sync import (
+from trees_api.core.models import WorkflowInvocation, WorkflowName
+from trees_api.workers.status_sync import (
     MISSING_INVOCATION_DISCARD_AFTER,
     discover_missing_invocations,
     sync_workflow_statuses,
