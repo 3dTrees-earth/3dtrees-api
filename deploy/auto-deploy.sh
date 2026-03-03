@@ -13,7 +13,7 @@ BRANCH="${BRANCH:-main}"
 COMPOSE_FILE="${COMPOSE_FILE:-$SCRIPT_DIR/docker-compose.api.prod.yml}"
 LOG_FILE="${LOG_FILE:-$PROJECT_ROOT/auto-deploy.log}"
 LOCK_FILE="${LOCK_FILE:-/tmp/3dtrees-api-auto-deploy.lock}"
-DEPLOY_SERVICES="${DEPLOY_SERVICES:-api download-worker}"
+DEPLOY_SERVICES="${DEPLOY_SERVICES:-api status-pooler download-worker}"
 
 mkdir -p "$(dirname "$LOG_FILE")"
 

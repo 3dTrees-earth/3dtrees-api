@@ -81,15 +81,12 @@ services:
       STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY}
       STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY}
 
-  # One-shot status pooler service for cron:
-  # docker compose -f deploy/docker-compose.api.prod.yml run --rm status-pooler-job
-  status-pooler-job:
+  status-pooler:
     build:
       context: ..
       dockerfile: Dockerfile
-    command: ["python", "-m", "trees_api.workers.status_pooler"]
-    restart: "no"
-    profiles: ["manual"]
+    command: ["python", "-m", "trees_api.workers.status_pooler", "--continuous"]
+    restart: unless-stopped
     environment:
       STATUS_POOLER_INTERVAL: ${STATUS_POOLER_INTERVAL:-10}
       GALAXY_URL: ${GALAXY_URL}
