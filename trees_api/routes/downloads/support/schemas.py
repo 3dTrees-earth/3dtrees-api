@@ -20,7 +20,7 @@ class DatasetInfo(BaseModel):
     id: int
     uuid: Optional[str] = None
     title: str
-    visibility: Optional[str] = None
+    visibility: Optional[Literal["private", "public", "view_only", "restricted"]] = None
     archived: bool
     dataset_url: str
 

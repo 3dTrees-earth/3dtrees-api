@@ -82,6 +82,25 @@ def get_authenticated_user(
     return _resolve_user_from_token(supabase, token)
 
 
+def _can_request_download(
+    dataset: Dict[str, Any],
+    user: AuthenticatedUser,
+    is_core_team_member: bool,
+) -> bool:
+    visibility = str(dataset.get("visibility") or "").strip().lower()
+    owner_id = dataset.get("user_id")
+    is_owner = owner_id == user.id
+
+    if visibility == "public":
+        return True
+
+    if visibility in {"private", "restricted", "view_only"}:
+        return is_owner or is_core_team_member
+
+    # Unknown visibility values remain locked down.
+    return is_owner or is_core_team_member
+
+
 @router.post("")
 def create_download_request(
     request: CreateDownloadRequest,
@@ -105,11 +124,20 @@ def create_download_request(
             status_code=400, detail=f"Dataset {request.dataset_id} is archived"
         )
 
-    dataset_visibility = dataset.get("visibility")
-    dataset_owner_id = dataset.get("user_id")
-    if dataset_visibility != "public" and dataset_owner_id != user.id:
+    try:
+        is_core_team_member = supabase.is_core_team_member(user.id)
+    except Exception as error:
+        logger.error("Failed to resolve core-team membership: %s", error)
+        raise HTTPException(status_code=503, detail="Could not verify access permissions")
+
+    if not _can_request_download(
+        dataset=dataset,
+        user=user,
+        is_core_team_member=is_core_team_member,
+    ):
         raise HTTPException(
-            status_code=403, detail="Only the dataset owner can request this download"
+            status_code=403,
+            detail="Download access denied for this dataset",
         )
 
     try:

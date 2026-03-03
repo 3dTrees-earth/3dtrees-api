@@ -12,9 +12,10 @@ from trees_api.integrations.supabase.client import ActiveDownloadRequestExistsEr
 
 
 class _FakeSupabase:
-    def __init__(self, dataset_row):
+    def __init__(self, dataset_row, core_team_ids=None):
         self.dataset_row = dataset_row
         self.calls = 0
+        self.core_team_ids = set(core_team_ids or [])
 
     def get_dataset_with_items(self, dataset_id: int):
         if self.dataset_row and int(self.dataset_row["id"]) == int(dataset_id):
@@ -39,6 +40,9 @@ class _FakeSupabase:
             "include_segmentation": include_segmentation,
             "status": "pending",
         }
+
+    def is_core_team_member(self, user_id: str) -> bool:
+        return user_id in self.core_team_ids
 
 
 def _build_client(fake_supabase: _FakeSupabase, user: AuthenticatedUser) -> TestClient:
@@ -98,6 +102,108 @@ def test_private_dataset_denies_non_owner():
     )
     assert response.status_code == 403
     assert fake.calls == 0
+
+
+def test_view_only_dataset_denies_non_owner_non_core_team():
+    fake = _FakeSupabase(
+        {
+            "id": 14,
+            "user_id": "owner-1",
+            "visibility": "view_only",
+            "archived": False,
+            "dataset_items": [{"id": 1}],
+        }
+    )
+    user = AuthenticatedUser(id="other-user", email="other@example.com")
+    client = _build_client(fake, user)
+
+    response = client.post(
+        "/downloads",
+        json=CreateDownloadRequest(
+            dataset_id=14,
+            include_raw=True,
+            include_segmentation=False,
+        ).model_dump(),
+    )
+    assert response.status_code == 403
+    assert fake.calls == 0
+
+
+def test_view_only_dataset_allows_core_team_member():
+    fake = _FakeSupabase(
+        {
+            "id": 15,
+            "user_id": "owner-1",
+            "visibility": "view_only",
+            "archived": False,
+            "dataset_items": [{"id": 1}],
+        },
+        core_team_ids={"core-team-user"},
+    )
+    user = AuthenticatedUser(id="core-team-user", email="core@example.com")
+    client = _build_client(fake, user)
+
+    response = client.post(
+        "/downloads",
+        json=CreateDownloadRequest(
+            dataset_id=15,
+            include_raw=True,
+            include_segmentation=False,
+        ).model_dump(),
+    )
+    assert response.status_code == 200, response.text
+    assert fake.calls == 1
+
+
+def test_view_only_dataset_allows_owner():
+    fake = _FakeSupabase(
+        {
+            "id": 17,
+            "user_id": "owner-1",
+            "visibility": "view_only",
+            "archived": False,
+            "dataset_items": [{"id": 1}],
+        }
+    )
+    user = AuthenticatedUser(id="owner-1", email="owner@example.com")
+    client = _build_client(fake, user)
+
+    response = client.post(
+        "/downloads",
+        json=CreateDownloadRequest(
+            dataset_id=17,
+            include_raw=True,
+            include_segmentation=False,
+        ).model_dump(),
+    )
+    assert response.status_code == 200, response.text
+    assert fake.calls == 1
+
+
+def test_private_dataset_allows_core_team_member():
+    fake = _FakeSupabase(
+        {
+            "id": 16,
+            "user_id": "owner-1",
+            "visibility": "private",
+            "archived": False,
+            "dataset_items": [{"id": 1}],
+        },
+        core_team_ids={"core-team-user"},
+    )
+    user = AuthenticatedUser(id="core-team-user", email="core@example.com")
+    client = _build_client(fake, user)
+
+    response = client.post(
+        "/downloads",
+        json=CreateDownloadRequest(
+            dataset_id=16,
+            include_raw=True,
+            include_segmentation=False,
+        ).model_dump(),
+    )
+    assert response.status_code == 200, response.text
+    assert fake.calls == 1
 
 
 def test_active_request_conflict_maps_to_409():

@@ -1005,6 +1005,24 @@ class SupabaseClient:
     # Download requests
     # =========================================================================
 
+    def is_core_team_member(self, user_id: str) -> bool:
+        """Return True when a user is marked active in core_team_members."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("core_team_members")
+                .select("user_id")
+                .eq("user_id", user_id)
+                .eq("is_active", True)
+                .limit(1)
+                .execute()
+            )
+            return bool(response.data)
+        except Exception as e:
+            raise RuntimeError(f"Failed to check core team membership for user {user_id}: {e}") from e
+
     def get_dataset_with_items(self, dataset_id: int) -> Optional[Dict[str, Any]]:
         """Get dataset row with nested dataset_items for download packaging."""
         if not self.client:

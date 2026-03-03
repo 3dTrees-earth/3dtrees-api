@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 
 from pydantic import BaseModel
 
@@ -15,7 +15,7 @@ class Dataset(BaseModel):
     acquisition_date: datetime
     bucket_path: str
     file_name: Optional[str] = None
-    visibility: Optional[str] = None
+    visibility: Optional[Literal["private", "public", "view_only", "restricted"]] = None
 
 
 class WorkflowName(StrEnum):
