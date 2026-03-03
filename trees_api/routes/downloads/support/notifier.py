@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import html
 
 from trees_api.integrations.notifications.client import (
     BrevoEmailConfig,
@@ -25,25 +26,30 @@ def _build_download_email_html(
 ) -> str:
     expires_text = expires_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     dataset_url = f"https://3dtrees.earth/datasets/{dataset_id}"
+    safe_dataset_title = html.escape(dataset_title, quote=True)
+    safe_archive_filename = html.escape(archive_filename, quote=True)
+    safe_signed_url = html.escape(signed_url, quote=True)
+    safe_dataset_url = html.escape(dataset_url, quote=True)
+    safe_expires_text = html.escape(expires_text, quote=True)
     return (
         '<div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">'
         '<h2 style="margin-bottom: 8px;">Your 3Dtrees download is ready</h2>'
         '<p style="margin-top: 0;">'
-        f"Dataset <strong>{dataset_id}</strong> ({dataset_title}) has been packaged for download."
+        f"Dataset <strong>{dataset_id}</strong> ({safe_dataset_title}) has been packaged for download."
         "</p>"
         '<div style="margin: 20px 0;">'
-        f'<a href="{signed_url}" '
+        f'<a href="{safe_signed_url}" '
         'style="background:#2563eb;color:#ffffff;text-decoration:none;padding:10px 14px;'
         'border-radius:6px;display:inline-block;">'
         "Download archive"
         "</a>"
         "</div>"
         '<p style="margin: 0;">'
-        f"<strong>Archive:</strong> {archive_filename}<br>"
-        f"<strong>Expires:</strong> {expires_text}"
+        f"<strong>Archive:</strong> {safe_archive_filename}<br>"
+        f"<strong>Expires:</strong> {safe_expires_text}"
         "</p>"
         '<p style="margin-top: 12px;">'
-        f'Dataset page: <a href="{dataset_url}">{dataset_url}</a>'
+        f'Dataset page: <a href="{safe_dataset_url}">{safe_dataset_url}</a>'
         "</p>"
         '<hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">'
         '<p style="font-size: 12px; color: #6b7280; margin: 0;">'

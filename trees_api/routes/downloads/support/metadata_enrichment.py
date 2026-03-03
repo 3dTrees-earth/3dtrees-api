@@ -39,7 +39,7 @@ def extract_model_from_parameters(
         for key, value in node.items():
             key_lower = str(key).lower()
             child_path = f"{path}.{key}" if path else str(key)
-            if isinstance(value, (str, int, float, bool)):
+            if isinstance(value, (str, int, float)) and not isinstance(value, bool):
                 if (
                     key_lower in candidate_keys
                     or "model" in key_lower

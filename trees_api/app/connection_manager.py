@@ -49,6 +49,10 @@ class ConnectionManager:
             self.uploader_storage = ClientState()
             self._retry_task: Optional[asyncio.Task] = None
             self._initialized = True
+        elif config is not None:
+            # Allow lifespan startup to inject the already validated config
+            # even if the singleton instance was created during module import.
+            self.config = config
 
     def connect_galaxy(self) -> Optional[GalaxyClient]:
         with self._lock:
