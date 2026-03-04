@@ -45,6 +45,8 @@ services:
       STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY}
       STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY}
       BREVO_API_KEY: ${BREVO_API_KEY}
+      BREVO_SUBSCRIBER_LIST_ID: ${BREVO_SUBSCRIBER_LIST_ID:-3}
+      BREVO_USER_LIST_ID: ${BREVO_USER_LIST_ID:-4}
       API_SERVER_PORT: ${API_SERVER_PORT:-8000}
     command: ["python", "-m", "trees_api.app.server"]
     ports:
