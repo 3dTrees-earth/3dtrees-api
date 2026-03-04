@@ -44,6 +44,7 @@ services:
       STORAGE_SECRET_KEY_UPLOADER: ${STORAGE_SECRET_KEY_UPLOADER}
       STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY}
       STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY}
+      BREVO_API_KEY: ${BREVO_API_KEY}
       API_SERVER_PORT: ${API_SERVER_PORT:-8000}
     command: ["python", "-m", "trees_api.app.server"]
     ports:

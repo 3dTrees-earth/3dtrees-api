@@ -193,6 +193,27 @@ class LinearConfig(BaseSettings):
         return bool(self.api_key and self.enabled)
 
 
+class BrevoConfig(BaseSettings):
+    """Brevo CRM configuration for contact sync and transactional email."""
+
+    api_key: Optional[str] = Field(default=None, description="Brevo API key")
+    subscriber_list_id: int = Field(
+        default=3, description="Brevo list ID for mailing-list subscribers"
+    )
+    user_list_id: int = Field(
+        default=4, description="Brevo list ID for registered users"
+    )
+
+    model_config = SettingsConfigDict(
+        case_sensitive=False,
+        env_prefix="BREVO_",
+        extra="ignore",
+    )
+
+    def is_configured(self) -> bool:
+        return bool(self.api_key)
+
+
 class AppConfig:
     """Aggregated configuration with validation on startup."""
 
@@ -201,6 +222,7 @@ class AppConfig:
         self.supabase = SupabaseConfig()
         self.storage = StorageConfig()
         self.api = APIConfig()
+        self.brevo = BrevoConfig()
 
     def validate(self) -> None:
         errors = []
