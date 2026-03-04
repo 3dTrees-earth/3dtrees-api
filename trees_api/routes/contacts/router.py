@@ -49,6 +49,8 @@ def subscribe(request: SubscribeRequest) -> ContactSyncResponse:
     crm = _get_crm_service()
     try:
         crm.add_subscriber(ContactData(email=request.email, source=request.source))
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Failed to sync subscriber %s", request.email)
         raise HTTPException(status_code=502, detail="CRM sync failed")
@@ -67,6 +69,8 @@ def sync_user(request: SyncUserRequest) -> ContactSyncResponse:
                 last_name=request.last_name,
             )
         )
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Failed to sync user %s", request.email)
         raise HTTPException(status_code=502, detail="CRM sync failed")
