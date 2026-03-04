@@ -41,6 +41,8 @@ class BrevoCRMService(CRMService):
             attributes["FIRSTNAME"] = contact.first_name
         if contact.last_name:
             attributes["LASTNAME"] = contact.last_name
+        if contact.source:
+            attributes["SOURCE"] = contact.source
 
         payload: dict = {
             "email": contact.email,

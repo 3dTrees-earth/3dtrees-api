@@ -12,6 +12,7 @@ class ContactData:
     email: str
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    source: Optional[str] = None
 
 
 class CRMService(ABC):
