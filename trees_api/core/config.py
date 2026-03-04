@@ -222,7 +222,6 @@ class AppConfig:
         self.supabase = SupabaseConfig()
         self.storage = StorageConfig()
         self.api = APIConfig()
-        self.brevo = BrevoConfig()
 
     def validate(self) -> None:
         errors = []

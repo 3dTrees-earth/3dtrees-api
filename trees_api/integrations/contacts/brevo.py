@@ -69,7 +69,11 @@ class BrevoCRMService(CRMService):
                     response.status_code,
                     response.text,
                 )
-                response.raise_for_status()
+                raise httpx.HTTPStatusError(
+                    f"Unexpected status {response.status_code}",
+                    request=response.request,
+                    response=response,
+                )
 
         logger.info(
             "Synced contact %s to Brevo lists %s",

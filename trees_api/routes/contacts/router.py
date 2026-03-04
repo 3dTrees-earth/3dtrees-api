@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from trees_api.integrations.contacts import BrevoCRMService, ContactData, CRMService
 from trees_api.integrations.contacts.brevo import BrevoContactsConfig
-from trees_api.core.config import AppConfig
+from trees_api.core.config import BrevoConfig
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class ContactSyncResponse(BaseModel):
 
 
 def _get_crm_service() -> CRMService:
-    config = AppConfig().brevo
+    config = BrevoConfig()
     if not config.is_configured():
         raise HTTPException(status_code=503, detail="CRM service not configured")
     return BrevoCRMService(
