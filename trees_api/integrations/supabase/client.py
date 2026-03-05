@@ -18,6 +18,10 @@ class ActiveDownloadRequestExistsError(RuntimeError):
     """Raised when DB-level unique-active intent constraint is violated."""
 
 
+class ActiveIngestionSessionExistsError(RuntimeError):
+    """Raised when DB-level unique-active ingestion session constraint is violated."""
+
+
 class SupabaseClient:
     """Supabase client for 3DTrees API."""
     
@@ -1000,6 +1004,370 @@ class SupabaseClient:
         except Exception as e:
             logger.error(f"Error deleting galaxy_history for dataset {dataset_id}: {e}")
             raise RuntimeError(f"Failed to delete galaxy_history: {e}") from e
+
+    # =========================================================================
+    # Ingestion sessions
+    # =========================================================================
+
+    def get_dataset_items_for_dataset(self, dataset_id: int) -> List[Dict[str, Any]]:
+        """Return all dataset_items for a dataset ordered by id."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("dataset_items")
+                .select("id, dataset_id, file_name, file_size_bytes, bucket_path")
+                .eq("dataset_id", dataset_id)
+                .order("id")
+                .execute()
+            )
+            return response.data or []
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to get dataset_items for dataset {dataset_id}: {e}"
+            ) from e
+
+    def create_ingestion_session(
+        self,
+        dataset_id: int,
+        created_by: str,
+        idempotency_key: Optional[str],
+        workflow_name: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Create a new ingestion session row."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        payload: Dict[str, Any] = {
+            "dataset_id": dataset_id,
+            "created_by": created_by,
+            "status": "pending",
+            "metadata": metadata or {},
+        }
+        if idempotency_key:
+            payload["idempotency_key"] = idempotency_key
+        if workflow_name:
+            payload["workflow_name"] = workflow_name
+
+        try:
+            response = self.client.table("ingestion_sessions").insert(payload).execute()
+            if not response.data:
+                raise RuntimeError("Insert returned no data")
+            return response.data[0]
+        except Exception as e:
+            error_text = str(e).lower()
+            if (
+                "duplicate key value" in error_text
+                and "ingestion_sessions_unique_active" in error_text
+            ):
+                raise ActiveIngestionSessionExistsError(
+                    "An active ingestion session already exists for this dataset"
+                ) from e
+            raise RuntimeError(f"Failed to create ingestion session: {e}") from e
+
+    def find_active_ingestion_session(
+        self,
+        created_by: str,
+        dataset_id: int,
+        idempotency_key: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Find active ingestion session for a user and dataset."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            query = (
+                self.client.table("ingestion_sessions")
+                .select("*")
+                .eq("created_by", created_by)
+                .eq("dataset_id", dataset_id)
+                .in_("status", ["pending", "uploading", "finalizing"])
+            )
+            if idempotency_key:
+                query = query.eq("idempotency_key", idempotency_key)
+            response = query.order("created_at", desc=True).limit(1).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(f"Failed to find active ingestion session: {e}") from e
+
+    def create_or_get_active_ingestion_session(
+        self,
+        dataset_id: int,
+        created_by: str,
+        idempotency_key: Optional[str],
+        workflow_name: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create ingestion session or return existing active session.
+
+        Race safety relies on DB partial unique index for active states.
+        """
+        existing = self.find_active_ingestion_session(
+            created_by=created_by,
+            dataset_id=dataset_id,
+            idempotency_key=idempotency_key,
+        )
+        if existing:
+            return existing
+
+        try:
+            return self.create_ingestion_session(
+                dataset_id=dataset_id,
+                created_by=created_by,
+                idempotency_key=idempotency_key,
+                workflow_name=workflow_name,
+                metadata=metadata,
+            )
+        except ActiveIngestionSessionExistsError:
+            raced = self.find_active_ingestion_session(
+                created_by=created_by,
+                dataset_id=dataset_id,
+                idempotency_key=idempotency_key,
+            )
+            if raced:
+                return raced
+            raise
+
+    def get_ingestion_session_for_user(
+        self,
+        session_id: int,
+        created_by: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Get ingestion session by id, scoped to owner."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("ingestion_sessions")
+                .select("*")
+                .eq("id", session_id)
+                .eq("created_by", created_by)
+                .limit(1)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to get ingestion session {session_id}: {e}"
+            ) from e
+
+    def list_ingestion_sessions_for_user(
+        self,
+        created_by: str,
+        dataset_id: Optional[int] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """List ingestion sessions for a specific user."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            query = (
+                self.client.table("ingestion_sessions")
+                .select("*")
+                .eq("created_by", created_by)
+            )
+            if dataset_id is not None:
+                query = query.eq("dataset_id", dataset_id)
+            response = query.order("created_at", desc=True).limit(limit).offset(offset).execute()
+            return response.data or []
+        except Exception as e:
+            raise RuntimeError(f"Failed to list ingestion sessions: {e}") from e
+
+    def list_ingestion_session_items(self, session_id: int) -> List[Dict[str, Any]]:
+        """List ingestion session items for a session."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("ingestion_session_items")
+                .select("*")
+                .eq("ingestion_session_id", session_id)
+                .order("id")
+                .execute()
+            )
+            return response.data or []
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to list ingestion session items for session {session_id}: {e}"
+            ) from e
+
+    def get_ingestion_session_item(
+        self,
+        session_id: int,
+        ingestion_item_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Get one ingestion item scoped to a session."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("ingestion_session_items")
+                .select("*")
+                .eq("id", ingestion_item_id)
+                .eq("ingestion_session_id", session_id)
+                .limit(1)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to get ingestion item {ingestion_item_id}: {e}"
+            ) from e
+
+    def create_or_update_ingestion_session_item(
+        self,
+        session_id: int,
+        dataset_item_id: int,
+        file_name: str,
+        file_size_bytes: int,
+        content_type: str,
+        key: str,
+        upload_id: str,
+        status: str = "uploading",
+    ) -> Dict[str, Any]:
+        """Upsert ingestion item by (session_id, dataset_item_id)."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        payload = {
+            "ingestion_session_id": session_id,
+            "dataset_item_id": dataset_item_id,
+            "file_name": file_name,
+            "file_size_bytes": file_size_bytes,
+            "content_type": content_type,
+            "s3_key": key,
+            "upload_id": upload_id,
+            "status": status,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        try:
+            existing = (
+                self.client.table("ingestion_session_items")
+                .select("id")
+                .eq("ingestion_session_id", session_id)
+                .eq("dataset_item_id", dataset_item_id)
+                .limit(1)
+                .execute()
+            )
+            if existing.data:
+                row_id = existing.data[0]["id"]
+                response = (
+                    self.client.table("ingestion_session_items")
+                    .update(payload)
+                    .eq("id", row_id)
+                    .execute()
+                )
+                if not response.data:
+                    raise RuntimeError("Update returned no data")
+                return response.data[0]
+
+            response = self.client.table("ingestion_session_items").insert(payload).execute()
+            if not response.data:
+                raise RuntimeError("Insert returned no data")
+            return response.data[0]
+        except Exception as e:
+            raise RuntimeError(f"Failed to upsert ingestion item: {e}") from e
+
+    def update_ingestion_session_item(
+        self,
+        session_id: int,
+        ingestion_item_id: int,
+        **updates: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """Update ingestion item in-session and return updated row."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        if not updates:
+            return self.get_ingestion_session_item(session_id, ingestion_item_id)
+
+        update_data: Dict[str, Any] = {}
+        for key, value in updates.items():
+            if hasattr(value, "isoformat"):
+                update_data[key] = value.isoformat()
+            else:
+                update_data[key] = value
+        update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        try:
+            response = (
+                self.client.table("ingestion_session_items")
+                .update(update_data)
+                .eq("id", ingestion_item_id)
+                .eq("ingestion_session_id", session_id)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to update ingestion session item {ingestion_item_id}: {e}"
+            ) from e
+
+    def update_ingestion_session(
+        self,
+        session_id: int,
+        **updates: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """Update ingestion session and return updated row."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        if not updates:
+            return None
+
+        update_data: Dict[str, Any] = {}
+        for key, value in updates.items():
+            if hasattr(value, "isoformat"):
+                update_data[key] = value.isoformat()
+            else:
+                update_data[key] = value
+        update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        try:
+            response = (
+                self.client.table("ingestion_sessions")
+                .update(update_data)
+                .eq("id", session_id)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to update ingestion session {session_id}: {e}"
+            ) from e
+
+    def update_dataset_item_bucket_path_by_id(
+        self,
+        dataset_item_id: int,
+        bucket_path: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Update dataset_items.bucket_path for a specific item."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("dataset_items")
+                .update(
+                    {
+                        "bucket_path": bucket_path,
+                    }
+                )
+                .eq("id", dataset_item_id)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to update bucket_path for dataset_item {dataset_item_id}: {e}"
+            ) from e
 
     # =========================================================================
     # Download requests

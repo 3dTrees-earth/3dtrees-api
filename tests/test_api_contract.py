@@ -10,6 +10,7 @@ def test_api_routes_are_wired():
     assert "/version" in paths
     assert "/jobs" in paths
     assert "/downloads" in paths
+    assert "/ingestions" in paths
     assert "/upload/multipart/create" in paths
 
 

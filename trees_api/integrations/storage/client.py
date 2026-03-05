@@ -3,11 +3,15 @@ from pathlib import Path
 from typing import Optional
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError, NoCredentialsError
 
 from trees_api.core.config import StorageConfig
 
 logger = logging.getLogger("trees_api.storage_client")
+
+# Force SigV4 and path-style URLs for consistent MinIO/S3 presigned behavior.
+S3_CLIENT_CONFIG = Config(signature_version="s3v4", s3={"addressing_style": "path"})
 
 
 class StorageClient:
@@ -36,6 +40,7 @@ class StorageClient:
                 aws_access_key_id=self.access_key,
                 aws_secret_access_key=self.secret_key,
                 region_name=self.region,
+                config=S3_CLIENT_CONFIG,
             )
             self.client.head_bucket(Bucket=self.bucket_name_raw)
             logger.info(
@@ -213,6 +218,7 @@ class UploaderStorageClient:
                 aws_access_key_id=self.access_key,
                 aws_secret_access_key=self.secret_key,
                 region_name=self.region,
+                config=S3_CLIENT_CONFIG,
             )
             logger.info(
                 "Successfully connected to storage service at %s (uploader, bucket: %s)",
