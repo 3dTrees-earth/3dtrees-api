@@ -115,6 +115,7 @@ ALLOWED_ORIGINS = [
     "https://threedtrees-dev.firebaseapp.com",
 ]
 ALLOWED_ORIGIN_REGEX = r"https://threedtrees-dev--.*\.web\.app"
+ALLOWED_HEADERS = ["Content-Type", "Authorization", "Idempotency-Key"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -122,7 +123,7 @@ app.add_middleware(
     allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=ALLOWED_HEADERS,
 )
 
 app.include_router(upload_router)

@@ -36,3 +36,10 @@ def test_jobs_endpoint_returns_503_when_dependencies_unavailable():
     finally:
         app.dependency_overrides.clear()
 
+
+def test_cors_allows_idempotency_key_header():
+    from trees_api.app.server import ALLOWED_HEADERS
+
+    normalized = {header.lower() for header in ALLOWED_HEADERS}
+    assert "idempotency-key" in normalized
+
