@@ -188,7 +188,7 @@
             },
             "tool_state": "{\"operation\": {\"task\": \"tile\", \"__current_case__\": 0, \"input_files\": {\"__class__\": \"ConnectedValue\"}, \"tile_length\": \"300\", \"tile_buffer\": \"20\", \"tiling_threshold\": \"10000.0\", \"resolution_1\": \"0.01\", \"resolution_2\": \"0.1\", \"skip_dimension_reduction\": true, \"workers\": \"2\"}, \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
             "tool_uuid": null,
-            "tool_version": "1.0.0+galaxy0",
+            "tool_version": "1.0.2+galaxy0",
             "type": "tool",
             "uuid": "ce4f5239-3c63-493a-a7ce-cbc7b0c7b3c0",
             "when": null,
@@ -428,7 +428,7 @@
             },
             "tool_state": "{\"input\": {\"__class__\": \"ConnectedValue\"}, \"log_file\": false, \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
             "tool_uuid": null,
-            "tool_version": "1.1.0+galaxy0",
+            "tool_version": "1.2.0+galaxy0",
             "type": "tool",
             "uuid": "49190aa0-3e24-4abf-a8cf-2a96cf89d7ae",
             "when": null,
@@ -571,7 +571,7 @@
             },
             "tool_state": "{\"operation\": {\"task\": \"merge\", \"__current_case__\": 1, \"input_segmented\": {\"__class__\": \"ConnectedValue\"}, \"input_res1\": {\"__class__\": \"ConnectedValue\"}, \"input_original\": {\"__class__\": \"ConnectedValue\"}, \"buffer\": \"30.0\", \"overlap_threshold\": \"0.3\", \"max_centroid_distance\": \"3.0\", \"max_volume_for_merge\": \"4.0\", \"min_cluster_size\": \"300\", \"border_zone_width\": \"10.0\", \"correspondence_tolerance\": \"0.05\", \"disable_matching\": false, \"workers\": \"2\"}, \"__page__\": 0, \"__rerun_remap_job_id__\": null}",
             "tool_uuid": null,
-            "tool_version": "1.0.0+galaxy0",
+            "tool_version": "1.0.2+galaxy0",
             "type": "tool",
             "uuid": "e94cf0d8-14fa-4943-bc15-83f116793b3d",
             "when": null,
@@ -707,5 +707,5 @@
         "S3Export"
     ],
     "uuid": "6e4e7d5a-b3f5-4163-9b2d-8df5bdb77797",
-    "version": 9
+    "version": 11
 }
