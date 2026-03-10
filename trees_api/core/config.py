@@ -200,18 +200,12 @@ class BrevoConfig(BaseSettings):
     subscriber_list_id: int = Field(
         default=3, description="Brevo list ID for mailing-list subscribers"
     )
-    user_list_id: int = Field(
-        default=4, description="Brevo list ID for registered users"
-    )
 
     model_config = SettingsConfigDict(
         case_sensitive=False,
         env_prefix="BREVO_",
         extra="ignore",
     )
-
-    def is_configured(self) -> bool:
-        return bool(self.api_key)
 
 
 class AppConfig:

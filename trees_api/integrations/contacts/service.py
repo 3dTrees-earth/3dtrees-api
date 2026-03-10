@@ -2,7 +2,6 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -10,9 +9,7 @@ class ContactData:
     """Contact information to sync with the CRM."""
 
     email: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    source: Optional[str] = None
+    source: str | None = None
 
 
 class CRMService(ABC):
@@ -24,7 +21,3 @@ class CRMService(ABC):
     @abstractmethod
     def add_subscriber(self, contact: ContactData) -> None:
         """Add a contact to the subscriber/mailing list."""
-
-    @abstractmethod
-    def add_user(self, contact: ContactData) -> None:
-        """Add a contact to the registered-user list."""

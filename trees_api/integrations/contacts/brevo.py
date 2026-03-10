@@ -18,7 +18,6 @@ class BrevoContactsConfig:
 
     api_key: str
     subscriber_list_id: int
-    user_list_id: int
 
 
 class BrevoCRMService(CRMService):
@@ -30,17 +29,10 @@ class BrevoCRMService(CRMService):
     def add_subscriber(self, contact: ContactData) -> None:
         self._upsert_contact(contact, list_ids=[self._config.subscriber_list_id])
 
-    def add_user(self, contact: ContactData) -> None:
-        self._upsert_contact(contact, list_ids=[self._config.user_list_id])
-
     def _upsert_contact(
         self, contact: ContactData, list_ids: list[int]
     ) -> None:
         attributes: dict[str, str] = {}
-        if contact.first_name:
-            attributes["FIRSTNAME"] = contact.first_name
-        if contact.last_name:
-            attributes["LASTNAME"] = contact.last_name
         if contact.source:
             attributes["SOURCE"] = contact.source
 
