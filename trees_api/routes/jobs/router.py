@@ -8,6 +8,7 @@ from trees_api.integrations.galaxy.client import GalaxyClient
 from trees_api.routes.jobs import service
 from trees_api.integrations.storage.client import StorageClient
 from trees_api.integrations.supabase.client import SupabaseClient
+from trees_api.routes.downloads.router import AuthenticatedUser, get_authenticated_user
 
 router = APIRouter(tags=["jobs"])
 
@@ -36,6 +37,7 @@ def create_job(
     workflow_name: str,
     overwrite: bool = False,
     parameters: dict = {},
+    user: AuthenticatedUser = Depends(get_authenticated_user),
     galaxy: Optional[GalaxyClient] = Depends(get_galaxy_client),
     supabase: Optional[SupabaseClient] = Depends(get_supabase_client),
     storage: Optional[StorageClient] = Depends(get_storage_client),
@@ -45,6 +47,7 @@ def create_job(
         workflow_name=workflow_name,
         overwrite=overwrite,
         parameters=parameters,
+        requesting_user_id=user.id,
         galaxy=galaxy,
         supabase=supabase,
         storage=storage,
@@ -54,14 +57,14 @@ def create_job(
 @router.get("/jobs")
 def list_jobs(
     dataset_id: Optional[int] = None,
-    user_id: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
+    user: AuthenticatedUser = Depends(get_authenticated_user),
     supabase: Optional[SupabaseClient] = Depends(get_supabase_client),
 ):
     return service.list_jobs(
         dataset_id=dataset_id,
-        user_id=user_id,
+        requesting_user_id=user.id,
         limit=limit,
         offset=offset,
         supabase=supabase,

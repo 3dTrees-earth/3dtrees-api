@@ -18,7 +18,6 @@ from trees_api.integrations.supabase.log_handler import setup_supabase_logging
 from trees_api.routes.downloads.router import router as download_router
 from trees_api.routes.ingestions.router import router as ingestion_router
 from trees_api.routes.jobs.router import router as jobs_router
-from trees_api.routes.uploads.router import router as upload_router
 
 logger = logging.getLogger("uvicorn")
 
@@ -126,7 +125,6 @@ app.add_middleware(
     allow_headers=ALLOWED_HEADERS,
 )
 
-app.include_router(upload_router)
 app.include_router(download_router)
 app.include_router(ingestion_router)
 app.include_router(jobs_router)

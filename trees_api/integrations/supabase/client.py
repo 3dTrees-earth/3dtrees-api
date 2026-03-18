@@ -262,14 +262,26 @@ class SupabaseClient:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
         
         def _execute_query():
-            query = self.client.table(self.datasets_table).select("*")
+            # datasets no longer store bucket_path/file_name directly; include nested
+            # dataset_items and hydrate legacy Dataset model fields for compatibility.
+            query = self.client.table(self.datasets_table).select(
+                "*, dataset_items:dataset_items(bucket_path, file_name)"
+            )
             if user_id is not None:
                 query = query.eq("user_id", user_id)
             
             datasets = []
             response = query.order("created_at", desc=True).limit(limit).offset(offset).execute()
             for dataset in response.data:
-                datasets.append(Dataset.model_validate(dataset))
+                dataset_items = dataset.get("dataset_items", [])
+                first_item = dataset_items[0] if dataset_items else {}
+                dataset_dict = {
+                    **dataset,
+                    "bucket_path": dataset.get("bucket_path") or first_item.get("bucket_path", ""),
+                    "file_name": dataset.get("file_name") or first_item.get("file_name"),
+                }
+                dataset_dict.pop("dataset_items", None)
+                datasets.append(Dataset.model_validate(dataset_dict))
             return datasets
         
         try:

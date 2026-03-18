@@ -83,6 +83,7 @@ def create_job(
     workflow_name: str,
     overwrite: bool,
     parameters: dict,
+    requesting_user_id: str,
     galaxy: Optional[GalaxyClient],
     supabase: Optional[SupabaseClient],
     storage: Optional[StorageClient],
@@ -105,29 +106,38 @@ def create_job(
             "Storage service is unavailable - this is OK since Galaxy accesses S3 directly"
         )
 
-    dataset_id_int = int(dataset_id)
-
     try:
-        response = (
-            supabase.client.table("dataset_items")
-            .select("id")
-            .eq("dataset_id", dataset_id_int)
-            .order("id")
-            .limit(1)
-            .execute()
-        )
-        if not response.data:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No dataset_items found for dataset {dataset_id}",
-            )
-        first_item_id = response.data[0]["id"]
-    except HTTPException:
-        raise
-    except Exception as error:
+        dataset_id_int = int(dataset_id)
+    except (TypeError, ValueError) as error:
         raise HTTPException(
-            status_code=400, detail=f"Failed to get dataset items: {error}"
+            status_code=400,
+            detail=f"Invalid dataset_id '{dataset_id}'",
         ) from error
+
+    dataset = supabase.get_dataset_with_items(dataset_id_int)
+    if not dataset:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Dataset {dataset_id_int} not found",
+        )
+    if dataset.get("archived"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Dataset {dataset_id_int} is archived",
+        )
+    if dataset.get("user_id") != requesting_user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the dataset owner can trigger jobs",
+        )
+
+    dataset_items = dataset.get("dataset_items") or []
+    if not dataset_items:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No dataset_items found for dataset {dataset_id_int}",
+        )
+    first_item_id = dataset_items[0]["id"]
 
     logger.info(
         "Creating collection workflow job for dataset_id=%s (first_item_id=%s)",
@@ -224,7 +234,7 @@ def create_job(
 def list_jobs(
     *,
     dataset_id: Optional[int],
-    user_id: Optional[str],
+    requesting_user_id: str,
     limit: int,
     offset: int,
     supabase: Optional[SupabaseClient],
@@ -235,30 +245,22 @@ def list_jobs(
             detail="Supabase service is unavailable. Please check /health for details.",
         )
 
-    if user_id is not None:
-        datasets = supabase.get_datasets(user_id=user_id)
-        dataset_ids = [dataset.id for dataset in datasets if dataset.id is not None]
-
-        if dataset_id is not None:
-            if dataset_id in dataset_ids:
-                dataset_ids = [dataset_id]
-            else:
-                return []
-
-        all_invocations = []
-        for row_dataset_id in dataset_ids:
-            user_invocations = supabase.get_workflow_invocations_by_dataset_id(
-                row_dataset_id, limit=1000
-            )
-            all_invocations.extend(user_invocations)
-
-        all_invocations.sort(key=lambda row: row.created_at, reverse=True)
-        return all_invocations[offset : offset + limit]
+    datasets = supabase.get_datasets(user_id=requesting_user_id)
+    dataset_ids = [dataset.id for dataset in datasets if dataset.id is not None]
 
     if dataset_id is not None:
-        return supabase.get_workflow_invocations_by_dataset_id(
-            dataset_id, limit=limit, offset=offset
-        )
+        if dataset_id in dataset_ids:
+            dataset_ids = [dataset_id]
+        else:
+            return []
 
-    return supabase.get_workflow_invocations(limit=limit, offset=offset)
+    all_invocations = []
+    for row_dataset_id in dataset_ids:
+        user_invocations = supabase.get_workflow_invocations_by_dataset_id(
+            row_dataset_id, limit=1000
+        )
+        all_invocations.extend(user_invocations)
+
+    all_invocations.sort(key=lambda row: row.created_at, reverse=True)
+    return all_invocations[offset : offset + limit]
 

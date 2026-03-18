@@ -1,4 +1,3 @@
-import os
 import time
 from datetime import datetime
 
@@ -9,44 +8,19 @@ from fastapi.testclient import TestClient
 from trees_api.core.config import StorageConfig, SupabaseConfig
 from trees_api.integrations.storage.client import StorageClient, UploaderStorageClient
 from trees_api.integrations.supabase.client import SupabaseClient
+from tests.supabase_auth_test_utils import password_login_token, require_supabase_auth_env
 
 
 def _get_access_token() -> str:
-    supabase_url = os.environ.get("SUPABASE_URL")
-    supabase_key = os.environ.get("SUPABASE_KEY")
-    supabase_email = os.environ.get("SUPABASE_EMAIL")
-    supabase_password = os.environ.get("SUPABASE_PASSWORD")
-
-    if not all([supabase_url, supabase_key, supabase_email, supabase_password]):
-        raise RuntimeError(
-            "SUPABASE_URL, SUPABASE_KEY, SUPABASE_EMAIL, and SUPABASE_PASSWORD must be set"
-        )
-
-    response = httpx.post(
-        f"{supabase_url}/auth/v1/token?grant_type=password",
-        headers={
-            "apikey": supabase_key,
-            "Content-Type": "application/json",
-        },
-        json={
-            "email": supabase_email,
-            "password": supabase_password,
-        },
-        timeout=20.0,
+    supabase_url, supabase_key, email, password = require_supabase_auth_env(
+        skip_prefix="Skipping integration test"
     )
-    response.raise_for_status()
-    token = response.json().get("access_token")
-    if not token:
-        raise RuntimeError("No access_token returned by Supabase auth endpoint")
-    return token
+    return password_login_token(supabase_url, supabase_key, email, password)
 
 
 @pytest.fixture(scope="module")
 def local_supabase_client() -> SupabaseClient:
-    required = ["SUPABASE_URL", "SUPABASE_KEY", "SUPABASE_EMAIL", "SUPABASE_PASSWORD"]
-    missing = [name for name in required if not os.environ.get(name)]
-    if missing:
-        pytest.skip(f"Skipping integration test: missing env vars: {', '.join(missing)}")
+    require_supabase_auth_env(skip_prefix="Skipping integration test")
 
     client = SupabaseClient(SupabaseConfig())
     try:

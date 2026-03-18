@@ -387,6 +387,7 @@ def complete_ingestion(
                 workflow_name=workflow_name,
                 overwrite=request.overwrite,
                 parameters=request.parameters,
+                requesting_user_id=user.id,
                 galaxy=galaxy,
                 supabase=supabase,
                 storage=processing_storage,
