@@ -134,7 +134,9 @@ def fix_potree_file_extensions(
         old_key = f"{potree_path}{old_name}"
         new_key = f"{potree_path}{new_name}"
         
-        # Check if .binary file exists and .bin doesn't
+        # If a fresh .binary exists, always promote it to .bin.
+        # This makes reruns deterministic: newly produced Potree assets
+        # replace previous .bin files instead of being ignored.
         try:
             binary_exists = storage_client.file_exists(
                 old_key, bucket=storage_config.bucket_name_visualization
@@ -143,8 +145,9 @@ def fix_potree_file_extensions(
                 new_key, bucket=storage_config.bucket_name_visualization
             )
             
-            if binary_exists and not bin_exists:
-                # Rename .binary to .bin
+            if binary_exists:
+                # Rename .binary to .bin (copy+delete semantics in StorageClient).
+                # copy_object overwrites existing destination, so reruns update .bin.
                 success = storage_client.rename_object(
                     old_key, new_key,
                     bucket=storage_config.bucket_name_visualization
