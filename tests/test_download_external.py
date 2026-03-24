@@ -159,12 +159,28 @@ def test_download_external_brevo_email_delivery(
         )
         with zipfile.ZipFile(archive_local_path, "r") as zip_file:
             names = zip_file.namelist()
+            assert f"3dt_{dataset.id}/README.md" in names
+            assert f"3dt_{dataset.id}/LICENSE.txt" in names
+            assert f"3dt_{dataset.id}/CITATION.bib" in names
+            assert f"3dt_{dataset.id}/datacite.json" in names
             seg_prefix = f"3dt_{dataset.id}/data/segmentation/3dtree_{dataset.id}_{dataset_item_id}_segmentation"
             assert any(name.startswith(seg_prefix) for name in names), "segmentation file missing from archive"
             metadata_from_archive = json.loads(zip_file.read(f"3dt_{dataset.id}/metadata.json").decode("utf-8"))
+            readme_text = zip_file.read(f"3dt_{dataset.id}/README.md").decode("utf-8")
+            license_text = zip_file.read(f"3dt_{dataset.id}/LICENSE.txt").decode("utf-8")
+            bibtex_text = zip_file.read(f"3dt_{dataset.id}/CITATION.bib").decode("utf-8")
+            datacite_payload = json.loads(
+                zip_file.read(f"3dt_{dataset.id}/datacite.json").decode("utf-8")
+            )
             archive_processing = metadata_from_archive.get("processing") or {}
             assert "segmentation" in archive_processing
             assert "used_model" in archive_processing["segmentation"]
+            assert "cite both the dataset and the 3Dtrees processing platform" in readme_text
+            assert "Creative Commons Attribution 4.0 International (CC BY 4.0)" in readme_text
+            assert "3Dtrees citation:" in license_text
+            assert "@dataset{3dtrees_dataset_" in bibtex_text
+            assert datacite_payload["titles"][0]["title"] == dataset.title
+            assert datacite_payload["types"]["resourceTypeGeneral"] == "Dataset"
 
         expected_subject = f"Your 3Dtrees download is ready: {row['archive_filename']}"
         logs_url = _brevo_logs_url()

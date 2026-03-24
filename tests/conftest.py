@@ -1,10 +1,12 @@
 import pytest
 import logging
+import os
 from pathlib import Path
 from typing import Generator, Optional
 from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError
+from dotenv import load_dotenv
 
 from trees_api.core.config import GalaxyConfig, SupabaseConfig, StorageConfig
 from trees_api.core.models import Dataset
@@ -15,6 +17,16 @@ from trees_api.integrations.supabase.client import SupabaseClient
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _load_repo_env() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    env_path = repo_root / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+
+
+_load_repo_env()
 
 
 @pytest.fixture(scope="session")
@@ -34,7 +46,7 @@ def storage_client() -> StorageClient:
         
     except Exception as e:
         logger.error(f"Failed to setup storage client: {e}")
-        raise
+        pytest.skip(f"Skipping integration test: storage client unavailable: {e}")
 
 
 def _ensure_bucket_exists(storage_client: StorageClient) -> None:
@@ -72,8 +84,14 @@ def _ensure_bucket_exists(storage_client: StorageClient) -> None:
 @pytest.fixture(scope="session")
 def supabase_client() -> SupabaseClient:
     config = SupabaseConfig()
+    if not config.url or not (config.key or config.service_key):
+        pytest.skip("Skipping integration test: Supabase environment is not configured")
+
     client = SupabaseClient(config)
-    client.connect()
+    try:
+        client.connect()
+    except Exception as e:
+        pytest.skip(f"Skipping integration test: Supabase is not reachable: {e}")
     
     # Authenticate with processor user for testing using environment variables
     try:
@@ -90,7 +108,7 @@ def supabase_client() -> SupabaseClient:
             logger.info("✅ Authenticated with newly created processor user")
         except Exception as reg_e:
             logger.error(f"Failed to create processor user: {reg_e}")
-            logger.warning("Tests will use anonymous access - this may cause issues with dataset creation")
+            pytest.skip(f"Skipping integration test: processor user auth/registration failed: {reg_e}")
     
     return client
 

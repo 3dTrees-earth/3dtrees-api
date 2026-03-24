@@ -1411,7 +1411,16 @@ class SupabaseClient:
         try:
             response = (
                 self.client.table("datasets")
-                .select("id, uuid, user_id, title, visibility, archived, dataset_items(id, file_name, bucket_path, file_size_bytes)")
+                .select(
+                    "id, uuid, user_id, title, description, acquisition_date, "
+                    "visibility, archived, platform, sensor, scan_pattern, "
+                    "preprocessing_steps, coordinate_accuracy, coordinate_reference, "
+                    "point_attributes_description, "
+                    "dataset_items(id, file_name, bucket_path, file_size_bytes), "
+                    "dataset_authors(first_name, last_name, organisation, orcid), "
+                    "dataset_funding(funder_name, funder_identifier, award_number, award_title), "
+                    "datacite(doi)"
+                )
                 .eq("id", dataset_id)
                 .limit(1)
                 .execute()
@@ -1419,6 +1428,215 @@ class SupabaseClient:
             return response.data[0] if response.data else None
         except Exception as e:
             raise RuntimeError(f"Failed to get dataset {dataset_id} with items: {e}") from e
+
+    def get_dataset_for_user(self, dataset_id: int, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get one non-archived dataset row scoped to owner."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("datasets")
+                .select("id, user_id, archived, collection_id")
+                .eq("id", dataset_id)
+                .eq("user_id", user_id)
+                .eq("archived", False)
+                .limit(1)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(f"Failed to get dataset {dataset_id} for user: {e}") from e
+
+    # =========================================================================
+    # Collections
+    # =========================================================================
+
+    def list_collections_for_user(
+        self,
+        owner_user_id: str,
+        include_archived: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            query = (
+                self.client.table("collections")
+                .select("*")
+                .eq("owner_user_id", owner_user_id)
+            )
+            if not include_archived:
+                query = query.eq("archived", False)
+            response = query.order("created_at", desc=True).limit(limit).offset(offset).execute()
+            return response.data or []
+        except Exception as e:
+            raise RuntimeError(f"Failed to list collections: {e}") from e
+
+    def get_collection_for_user(
+        self,
+        collection_id: int,
+        owner_user_id: str,
+        include_archived: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            query = (
+                self.client.table("collections")
+                .select("*")
+                .eq("id", collection_id)
+                .eq("owner_user_id", owner_user_id)
+                .limit(1)
+            )
+            if not include_archived:
+                query = query.eq("archived", False)
+            response = query.execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(f"Failed to get collection {collection_id}: {e}") from e
+
+    def create_collection(
+        self,
+        owner_user_id: str,
+        name: str,
+        description: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        payload = {
+            "owner_user_id": owner_user_id,
+            "name": name,
+            "description": description,
+            "archived": False,
+        }
+
+        try:
+            response = self.client.table("collections").insert(payload).execute()
+            if not response.data:
+                raise RuntimeError("Insert returned no data")
+            return response.data[0]
+        except Exception as e:
+            raise RuntimeError(f"Failed to create collection: {e}") from e
+
+    def update_collection_for_user(
+        self,
+        collection_id: int,
+        owner_user_id: str,
+        **updates: Any,
+    ) -> Optional[Dict[str, Any]]:
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+        if not updates:
+            return self.get_collection_for_user(collection_id, owner_user_id, include_archived=True)
+
+        update_data: Dict[str, Any] = {}
+        for key, value in updates.items():
+            if hasattr(value, "isoformat"):
+                update_data[key] = value.isoformat()
+            else:
+                update_data[key] = value
+        update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        try:
+            response = (
+                self.client.table("collections")
+                .update(update_data)
+                .eq("id", collection_id)
+                .eq("owner_user_id", owner_user_id)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(f"Failed to update collection {collection_id}: {e}") from e
+
+    def archive_collection_for_user(self, collection_id: int, owner_user_id: str) -> Optional[Dict[str, Any]]:
+        return self.update_collection_for_user(
+            collection_id=collection_id,
+            owner_user_id=owner_user_id,
+            archived=True,
+        )
+
+    def list_dataset_collection_assignments_for_user(
+        self,
+        owner_user_id: str,
+        limit: int = 1000,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("datasets")
+                .select("id, title, collection_id, created_at")
+                .eq("user_id", owner_user_id)
+                .eq("archived", False)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .offset(offset)
+                .execute()
+            )
+            return response.data or []
+        except Exception as e:
+            raise RuntimeError(f"Failed to list dataset collection assignments: {e}") from e
+
+    def assign_dataset_to_collection(
+        self,
+        dataset_id: int,
+        owner_user_id: str,
+        collection_id: Optional[int],
+    ) -> Optional[Dict[str, Any]]:
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("datasets")
+                .update(
+                    {
+                        "collection_id": collection_id,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                .eq("id", dataset_id)
+                .eq("user_id", owner_user_id)
+                .eq("archived", False)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to assign dataset {dataset_id} to collection {collection_id}: {e}"
+            ) from e
+
+    def unassign_datasets_for_collection(self, collection_id: int, owner_user_id: str) -> int:
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("datasets")
+                .update(
+                    {
+                        "collection_id": None,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                .eq("collection_id", collection_id)
+                .eq("user_id", owner_user_id)
+                .eq("archived", False)
+                .execute()
+            )
+            return len(response.data or [])
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to unassign datasets for collection {collection_id}: {e}"
+            ) from e
 
     def get_current_workflow_invocation_for_dataset(self, dataset_id: int) -> Optional[Dict[str, Any]]:
         """

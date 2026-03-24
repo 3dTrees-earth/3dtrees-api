@@ -15,6 +15,8 @@ def write_download_archive(
     archive_root_name: str,
     readme_text: str,
     license_text: str,
+    bibtex_text: str,
+    datacite_payload: Dict[str, object],
     metadata_payload: Dict[str, object],
     sources: List[ArchiveSource],
 ) -> int:
@@ -35,6 +37,11 @@ def write_download_archive(
     ) as zip_file:
         zip_file.writestr(f"{archive_root_name}/README.md", readme_text)
         zip_file.writestr(f"{archive_root_name}/LICENSE.txt", license_text)
+        zip_file.writestr(f"{archive_root_name}/CITATION.bib", bibtex_text)
+        zip_file.writestr(
+            f"{archive_root_name}/datacite.json",
+            json.dumps(datacite_payload, indent=2),
+        )
         zip_file.writestr(
             f"{archive_root_name}/metadata.json",
             json.dumps(metadata_payload, indent=2),

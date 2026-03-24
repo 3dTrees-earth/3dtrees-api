@@ -15,6 +15,7 @@ from trees_api.integrations.galaxy.client import GalaxyClient
 from trees_api.integrations.storage.client import StorageClient
 from trees_api.integrations.supabase.client import SupabaseClient
 from trees_api.integrations.supabase.log_handler import setup_supabase_logging
+from trees_api.routes.collections.router import router as collections_router
 from trees_api.routes.downloads.router import router as download_router
 from trees_api.routes.ingestions.router import router as ingestion_router
 from trees_api.routes.jobs.router import router as jobs_router
@@ -121,10 +122,11 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=ALLOWED_HEADERS,
 )
 
+app.include_router(collections_router)
 app.include_router(download_router)
 app.include_router(ingestion_router)
 app.include_router(jobs_router)

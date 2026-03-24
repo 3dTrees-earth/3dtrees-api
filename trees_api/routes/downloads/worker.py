@@ -25,6 +25,8 @@ from trees_api.core.config import StorageConfig, SupabaseConfig
 from trees_api.integrations.notifications.client import BrevoEmailConfig
 from trees_api.routes.downloads.support.archive_writer import write_download_archive
 from trees_api.routes.downloads.support.metadata_enrichment import (
+    build_bibtex_citation,
+    build_datacite_payload,
     build_license_note,
     build_metadata_model,
     build_readme,
@@ -261,6 +263,8 @@ def _process_download_request(
             warnings=enrichment_warnings,
         )
         metadata_payload = metadata_model.model_dump(mode="json")
+        datacite_payload = build_datacite_payload(dataset=dataset, generated_at=now)
+        bibtex_text = build_bibtex_citation(dataset=dataset, generated_at=now)
 
         readme_text = build_readme(
             dataset=dataset,
@@ -268,10 +272,13 @@ def _process_download_request(
             archive_file_name=archive_file_name,
             segmentation_model=metadata_model.processing.segmentation.used_model,
             workflow_name=metadata_model.processing.galaxy_workflow.workflow_name,
+            generated_at=now,
         )
         license_text = build_license_note(
             dataset=dataset,
             segmentation_model=metadata_model.processing.segmentation.used_model,
+            generated_at=now,
+            include_segmentation=bool(request_row.get("include_segmentation")),
         )
 
         with tempfile.TemporaryDirectory(prefix="3dtrees-download-") as work_dir:
@@ -282,6 +289,8 @@ def _process_download_request(
                 archive_root_name=archive_root_name,
                 readme_text=readme_text,
                 license_text=license_text,
+                bibtex_text=bibtex_text,
+                datacite_payload=datacite_payload,
                 metadata_payload=metadata_payload,
                 sources=sources,
             )

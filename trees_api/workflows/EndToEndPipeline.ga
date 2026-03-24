@@ -673,7 +673,7 @@
             "tool_state": "{\"export_type\": {\"export_type_selector\": \"collection_auto\", \"incollection\": {\"__class__\": \"ConnectedValue\"}, \"include_collection_name\": false}, \"d_uri\": \"gxfiles://products-storage/3dtiles/points/\", \"include_metadata_files\": false, \"invalid_chars\": \"\"}",
             "tool_version": "0.1.0",
             "type": "tool",
-            "uuid": "b9f5d3e2-4c6f-5b0a-9d8e-7f3g2b1c0d9e",
+            "uuid": "b9f5d3e2-4c6f-4b0a-9d8e-7f3a2b1c0d9e",
             "when": null,
             "workflow_outputs": []
         }

@@ -11,6 +11,7 @@ def test_api_routes_are_wired():
     assert "/jobs" in paths
     assert "/downloads" in paths
     assert "/ingestions" in paths
+    assert "/collections" in paths
     assert "/upload/multipart/create" not in paths
 
 
