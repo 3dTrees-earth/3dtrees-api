@@ -85,7 +85,8 @@ def get_authenticated_user(
 def _can_request_download(
     dataset: Dict[str, Any],
     user: AuthenticatedUser,
-    is_core_team_member: bool,
+    has_platform_admin: bool,
+    has_dataset_read_access: bool,
 ) -> bool:
     visibility = str(dataset.get("visibility") or "").strip().lower()
     owner_id = dataset.get("user_id")
@@ -95,10 +96,10 @@ def _can_request_download(
         return True
 
     if visibility in {"private", "restricted", "view_only"}:
-        return is_owner or is_core_team_member
+        return is_owner or has_platform_admin or has_dataset_read_access
 
     # Unknown visibility values remain locked down.
-    return is_owner or is_core_team_member
+    return is_owner or has_platform_admin or has_dataset_read_access
 
 
 @router.post("")
@@ -125,15 +126,21 @@ def create_download_request(
         )
 
     try:
-        is_core_team_member = supabase.is_core_team_member(user.id)
+        has_platform_admin = supabase.has_platform_dataset_admin(user.id)
+        has_dataset_read_access = supabase.has_dataset_user_access(
+            user.id,
+            request.dataset_id,
+            required_permission="read",
+        )
     except Exception as error:
-        logger.error("Failed to resolve core-team membership: %s", error)
+        logger.error("Failed to resolve download access permissions: %s", error)
         raise HTTPException(status_code=503, detail="Could not verify access permissions")
 
     if not _can_request_download(
         dataset=dataset,
         user=user,
-        is_core_team_member=is_core_team_member,
+        has_platform_admin=has_platform_admin,
+        has_dataset_read_access=has_dataset_read_access,
     ):
         raise HTTPException(
             status_code=403,
