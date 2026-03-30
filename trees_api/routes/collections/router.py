@@ -25,6 +25,7 @@ class CollectionResponse(BaseModel):
 class CreateCollectionRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: Optional[str] = None
+    owner_user_id: Optional[str] = None
 
     @field_validator("name")
     @classmethod
@@ -96,9 +97,26 @@ def _serialize_collection(row: Dict[str, Any]) -> CollectionResponse:
     )
 
 
+def _has_platform_dataset_admin(supabase: SupabaseClient, user: AuthenticatedUser) -> bool:
+    try:
+        return supabase.has_platform_dataset_admin(user.id)
+    except Exception as error:
+        logger.error(
+            "Failed to resolve platform dataset admin access for user %s: %s",
+            user.id,
+            error,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Could not verify platform dataset admin permissions",
+        )
+
+
 @router.get("", response_model=List[CollectionResponse])
 def list_collections(
     include_archived: bool = False,
+    owner_user_id: Optional[str] = Query(default=None),
+    scope: Optional[str] = Query(default=None, pattern="^(all)$"),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     user: AuthenticatedUser = Depends(get_authenticated_user),
@@ -107,8 +125,24 @@ def list_collections(
     if not supabase:
         raise HTTPException(status_code=503, detail="Supabase service unavailable")
 
-    rows = supabase.list_collections_for_user(
-        owner_user_id=user.id,
+    has_platform_admin = _has_platform_dataset_admin(supabase, user)
+    target_owner_user_id = owner_user_id or user.id
+
+    if scope == "all":
+        if not has_platform_admin:
+            raise HTTPException(status_code=403, detail="Platform admin access required")
+        rows = supabase.list_collections(
+            include_archived=include_archived,
+            limit=limit,
+            offset=offset,
+        )
+        return [_serialize_collection(row) for row in rows]
+
+    if target_owner_user_id != user.id and not has_platform_admin:
+        raise HTTPException(status_code=403, detail="Platform admin access required")
+
+    rows = supabase.list_collections(
+        owner_user_id=target_owner_user_id,
         include_archived=include_archived,
         limit=limit,
         offset=offset,
@@ -125,9 +159,13 @@ def create_collection(
     if not supabase:
         raise HTTPException(status_code=503, detail="Supabase service unavailable")
 
+    target_owner_user_id = request.owner_user_id or user.id
+    if target_owner_user_id != user.id and not _has_platform_dataset_admin(supabase, user):
+        raise HTTPException(status_code=403, detail="Platform admin access required")
+
     try:
         row = supabase.create_collection(
-            owner_user_id=user.id,
+            owner_user_id=target_owner_user_id,
             name=request.name,
             description=request.description,
         )
@@ -149,12 +187,11 @@ def update_collection(
     if not supabase:
         raise HTTPException(status_code=503, detail="Supabase service unavailable")
 
-    existing = supabase.get_collection_for_user(
-        collection_id=collection_id,
-        owner_user_id=user.id,
-        include_archived=True,
-    )
+    existing = supabase.get_collection(collection_id=collection_id, include_archived=True)
     if not existing:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    has_platform_admin = _has_platform_dataset_admin(supabase, user)
+    if existing["owner_user_id"] != user.id and not has_platform_admin:
         raise HTTPException(status_code=404, detail="Collection not found")
 
     updates = request.model_dump(exclude_unset=True)
@@ -165,7 +202,7 @@ def update_collection(
     try:
         updated = supabase.update_collection_for_user(
             collection_id=collection_id,
-            owner_user_id=user.id,
+            owner_user_id=existing["owner_user_id"],
             **updates,
         )
         if not updated:
@@ -189,12 +226,11 @@ def archive_collection(
     if not supabase:
         raise HTTPException(status_code=503, detail="Supabase service unavailable")
 
-    existing = supabase.get_collection_for_user(
-        collection_id=collection_id,
-        owner_user_id=user.id,
-        include_archived=True,
-    )
+    existing = supabase.get_collection(collection_id=collection_id, include_archived=True)
     if not existing:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    has_platform_admin = _has_platform_dataset_admin(supabase, user)
+    if existing["owner_user_id"] != user.id and not has_platform_admin:
         raise HTTPException(status_code=404, detail="Collection not found")
     if existing.get("archived"):
         return ArchiveCollectionResponse(
@@ -205,11 +241,11 @@ def archive_collection(
 
     unassigned_count = supabase.unassign_datasets_for_collection(
         collection_id=collection_id,
-        owner_user_id=user.id,
+        owner_user_id=existing["owner_user_id"],
     )
     archived = supabase.archive_collection_for_user(
         collection_id=collection_id,
-        owner_user_id=user.id,
+        owner_user_id=existing["owner_user_id"],
     )
     if not archived:
         raise HTTPException(status_code=500, detail="Failed to archive collection")
@@ -223,6 +259,7 @@ def archive_collection(
 
 @router.get("/datasets", response_model=List[DatasetCollectionAssignmentListItem])
 def list_dataset_collection_assignments(
+    owner_user_id: Optional[str] = Query(default=None),
     limit: int = Query(default=1000, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
     user: AuthenticatedUser = Depends(get_authenticated_user),
@@ -231,8 +268,12 @@ def list_dataset_collection_assignments(
     if not supabase:
         raise HTTPException(status_code=503, detail="Supabase service unavailable")
 
+    target_owner_user_id = owner_user_id or user.id
+    if target_owner_user_id != user.id and not _has_platform_dataset_admin(supabase, user):
+        raise HTTPException(status_code=403, detail="Platform admin access required")
+
     rows = supabase.list_dataset_collection_assignments_for_user(
-        owner_user_id=user.id,
+        owner_user_id=target_owner_user_id,
         limit=limit,
         offset=offset,
     )
@@ -257,22 +298,26 @@ def assign_dataset_to_collection(
     if not supabase:
         raise HTTPException(status_code=503, detail="Supabase service unavailable")
 
-    dataset = supabase.get_dataset_for_user(dataset_id=dataset_id, user_id=user.id)
+    dataset = supabase.get_dataset(dataset_id=dataset_id)
     if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    has_platform_admin = _has_platform_dataset_admin(supabase, user)
+    if dataset["user_id"] != user.id and not has_platform_admin:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     if request.collection_id is not None:
-        collection = supabase.get_collection_for_user(
-            collection_id=request.collection_id,
-            owner_user_id=user.id,
-            include_archived=False,
-        )
+        collection = supabase.get_collection(collection_id=request.collection_id, include_archived=False)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection not found")
+        if collection["owner_user_id"] != dataset["user_id"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Dataset can only be assigned to a collection owned by the same user",
+            )
 
     updated = supabase.assign_dataset_to_collection(
         dataset_id=dataset_id,
-        owner_user_id=user.id,
+        owner_user_id=dataset["user_id"],
         collection_id=request.collection_id,
     )
     if not updated:
