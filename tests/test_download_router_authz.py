@@ -4,6 +4,7 @@ from datetime import datetime
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import httpx
 
 from trees_api.core.config import SupabaseConfig
 from trees_api.integrations.supabase.client import SupabaseClient
@@ -30,6 +31,23 @@ def local_supabase_client() -> SupabaseClient:
 
 
 @pytest.fixture(scope="module")
+def service_supabase_client() -> SupabaseClient:
+    require_supabase_auth_env(skip_prefix="Skipping downloads authz integration test")
+    client = SupabaseClient(SupabaseConfig())
+    try:
+        client.connect()
+    except Exception as error:
+        pytest.skip(
+            f"Skipping downloads authz integration test: Supabase service-role client unavailable: {error}"
+        )
+    if not client.using_service_role:
+        pytest.skip(
+            "Skipping downloads authz integration test: SUPABASE_SERVICE_KEY is required for fixture setup"
+        )
+    return client
+
+
+@pytest.fixture(scope="module")
 def auth_tokens() -> tuple[str, str]:
     supabase_url, supabase_key, owner_email, owner_password = require_supabase_auth_env(
         skip_prefix="Skipping downloads authz integration test"
@@ -48,6 +66,20 @@ def auth_tokens() -> tuple[str, str]:
         password="DownloadsAuthzPassw0rd!",
     )
     return owner_token, outsider_token
+
+
+def _resolve_user_identity(supabase_url: str, supabase_key: str, token: str) -> tuple[str, str]:
+    response = httpx.get(
+        f"{supabase_url}/auth/v1/user",
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {token}",
+        },
+        timeout=20.0,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload["id"], payload["email"]
 
 
 @pytest.fixture
@@ -205,3 +237,102 @@ def test_download_list_and_get_are_user_scoped(
     finally:
         _cleanup_dataset(local_supabase_client, dataset.id)
 
+
+def test_core_team_member_can_request_download_for_private_dataset(
+    downloads_api_client: TestClient,
+    local_supabase_client: SupabaseClient,
+    service_supabase_client: SupabaseClient,
+):
+    supabase_url, supabase_key, _, _ = require_supabase_auth_env(
+        skip_prefix="Skipping downloads authz integration test"
+    )
+    core_email = f"downloads-core-team-{int(time.time())}@example.test"
+    core_password = "DownloadsCoreTeamPassw0rd!"
+    core_token = ensure_user_token(
+        supabase_url=supabase_url,
+        supabase_key=supabase_key,
+        email=core_email,
+        password=core_password,
+    )
+    core_user_id, core_user_email = _resolve_user_identity(
+        supabase_url, supabase_key, core_token
+    )
+
+    dataset = _create_dataset(
+        local_supabase_client=local_supabase_client,
+        visibility="private",
+        title_prefix="Downloads core team private",
+    )
+    service_supabase_client.client.table("core_team_members").upsert(
+        {"user_id": core_user_id, "email": core_user_email}
+    ).execute()
+
+    try:
+        response = downloads_api_client.post(
+            "/downloads",
+            headers={"Authorization": f"Bearer {core_token}"},
+            json={
+                "dataset_id": dataset.id,
+                "include_raw": True,
+                "include_segmentation": False,
+            },
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["dataset_id"] == dataset.id
+        assert payload["status"] in {"pending", "processing"}
+    finally:
+        service_supabase_client.client.table("core_team_members").delete().eq(
+            "user_id", core_user_id
+        ).execute()
+        _cleanup_dataset(local_supabase_client, dataset.id)
+
+
+def test_shared_read_user_can_request_download_for_private_dataset(
+    downloads_api_client: TestClient,
+    local_supabase_client: SupabaseClient,
+    service_supabase_client: SupabaseClient,
+):
+    supabase_url, supabase_key, _, _ = require_supabase_auth_env(
+        skip_prefix="Skipping downloads authz integration test"
+    )
+    shared_email = f"downloads-shared-read-{int(time.time())}@example.test"
+    shared_password = "DownloadsSharedReadPassw0rd!"
+    shared_token = ensure_user_token(
+        supabase_url=supabase_url,
+        supabase_key=supabase_key,
+        email=shared_email,
+        password=shared_password,
+    )
+    shared_user_id, _ = _resolve_user_identity(supabase_url, supabase_key, shared_token)
+
+    dataset = _create_dataset(
+        local_supabase_client=local_supabase_client,
+        visibility="private",
+        title_prefix="Downloads shared read private",
+    )
+    service_supabase_client.client.table("dataset_user_access").upsert(
+        {
+            "dataset_id": dataset.id,
+            "grantee_user_id": shared_user_id,
+            "permission": "read",
+            "granted_by_user_id": dataset.user_id,
+        }
+    ).execute()
+
+    try:
+        response = downloads_api_client.post(
+            "/downloads",
+            headers={"Authorization": f"Bearer {shared_token}"},
+            json={
+                "dataset_id": dataset.id,
+                "include_raw": True,
+                "include_segmentation": False,
+            },
+        )
+        assert response.status_code == 200, response.text
+    finally:
+        service_supabase_client.client.table("dataset_user_access").delete().eq(
+            "dataset_id", dataset.id
+        ).eq("grantee_user_id", shared_user_id).execute()
+        _cleanup_dataset(local_supabase_client, dataset.id)

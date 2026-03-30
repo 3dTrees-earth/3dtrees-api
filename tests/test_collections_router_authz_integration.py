@@ -1,6 +1,7 @@
 import time
 from datetime import datetime
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -45,6 +46,23 @@ def local_supabase_client() -> SupabaseClient:
 
 
 @pytest.fixture(scope="module")
+def service_supabase_client() -> SupabaseClient:
+    require_supabase_auth_env(skip_prefix="Skipping collections authz integration test")
+    client = SupabaseClient(SupabaseConfig())
+    try:
+        client.connect()
+    except Exception as error:
+        pytest.skip(
+            f"Skipping collections authz integration test: Supabase service-role client unavailable: {error}"
+        )
+    if not client.using_service_role:
+        pytest.skip(
+            "Skipping collections authz integration test: SUPABASE_SERVICE_KEY is required for fixture setup"
+        )
+    return client
+
+
+@pytest.fixture(scope="module")
 def auth_tokens() -> tuple[str, str]:
     supabase_url, supabase_key, owner_email, owner_password = require_supabase_auth_env(
         skip_prefix="Skipping collections authz integration test"
@@ -65,12 +83,12 @@ def auth_tokens() -> tuple[str, str]:
 
 
 @pytest.fixture
-def collections_api_client(local_supabase_client: SupabaseClient) -> TestClient:
+def collections_api_client(service_supabase_client: SupabaseClient) -> TestClient:
     app = FastAPI()
     app.include_router(router)
-    app.dependency_overrides[get_collections_supabase_client] = lambda: local_supabase_client
+    app.dependency_overrides[get_collections_supabase_client] = lambda: service_supabase_client
     # Authentication dependency comes from downloads router.
-    app.dependency_overrides[get_downloads_supabase_client] = lambda: local_supabase_client
+    app.dependency_overrides[get_downloads_supabase_client] = lambda: service_supabase_client
     return TestClient(app)
 
 
@@ -105,6 +123,20 @@ def _get_dataset_collection_id(local_supabase_client: SupabaseClient, dataset_id
     if not response.data:
         return None
     return response.data[0].get("collection_id")
+
+
+def _resolve_user_identity(supabase_url: str, supabase_key: str, token: str) -> tuple[str, str]:
+    response = httpx.get(
+        f"{supabase_url}/auth/v1/user",
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {token}",
+        },
+        timeout=20.0,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload["id"], payload["email"]
 
 
 def test_collections_requires_authorization_header(collections_api_client: TestClient):
@@ -250,6 +282,208 @@ def test_collection_access_denied_for_outsider(
         )
         assert outsider_assign.status_code == 404
     finally:
+        _cleanup_dataset(local_supabase_client, dataset.id)
+        if collection_id is not None:
+            _cleanup_collection(local_supabase_client, collection_id)
+
+
+def test_platform_admin_can_manage_owner_collections_and_preserve_same_owner_assignment(
+    collections_api_client: TestClient,
+    local_supabase_client: SupabaseClient,
+    service_supabase_client: SupabaseClient,
+    auth_tokens: tuple[str, str],
+):
+    owner_token, outsider_token = auth_tokens
+    supabase_url, supabase_key, _, _ = require_supabase_auth_env(
+        skip_prefix="Skipping collections authz integration test"
+    )
+    platform_admin_email = f"collections-platform-admin-{int(time.time())}@example.test"
+    platform_admin_password = "CollectionsPlatformAdminPassw0rd!"
+    platform_admin_token = ensure_user_token(
+        supabase_url=supabase_url,
+        supabase_key=supabase_key,
+        email=platform_admin_email,
+        password=platform_admin_password,
+    )
+    platform_admin_user_id, platform_admin_email = _resolve_user_identity(
+        supabase_url, supabase_key, platform_admin_token
+    )
+
+    dataset = _create_private_dataset(local_supabase_client)
+    platform_admin_collection_id = None
+    outsider_collection_id = None
+
+    service_supabase_client.client.table("core_team_members").upsert(
+        {"user_id": platform_admin_user_id, "email": platform_admin_email}
+    ).execute()
+
+    try:
+        create_platform_admin_response = collections_api_client.post(
+            "/collections",
+            headers={"Authorization": f"Bearer {platform_admin_token}"},
+            json={
+                "name": f"Platform admin managed collection {int(time.time())}",
+                "description": "Created on behalf of dataset owner",
+                "owner_user_id": dataset.user_id,
+            },
+        )
+        assert (
+            create_platform_admin_response.status_code == 200
+        ), create_platform_admin_response.text
+        created_collection = create_platform_admin_response.json()
+        platform_admin_collection_id = created_collection["id"]
+        assert created_collection["owner_user_id"] == dataset.user_id
+
+        owner_collections_response = collections_api_client.get(
+            "/collections",
+            headers={"Authorization": f"Bearer {platform_admin_token}"},
+            params={"owner_user_id": dataset.user_id},
+        )
+        assert owner_collections_response.status_code == 200, owner_collections_response.text
+        assert any(
+            row["id"] == platform_admin_collection_id
+            for row in owner_collections_response.json()
+        )
+
+        all_collections_response = collections_api_client.get(
+            "/collections",
+            headers={"Authorization": f"Bearer {platform_admin_token}"},
+            params={"scope": "all"},
+        )
+        assert all_collections_response.status_code == 200, all_collections_response.text
+        assert any(
+            row["id"] == platform_admin_collection_id
+            for row in all_collections_response.json()
+        )
+
+        assign_response = collections_api_client.put(
+            f"/collections/datasets/{dataset.id}/collection",
+            headers={"Authorization": f"Bearer {platform_admin_token}"},
+            json={"collection_id": platform_admin_collection_id},
+        )
+        assert assign_response.status_code == 200, assign_response.text
+        assert assign_response.json()["collection_id"] == platform_admin_collection_id
+        assert (
+            _get_dataset_collection_id(local_supabase_client, dataset.id)
+            == platform_admin_collection_id
+        )
+
+        create_outsider_collection = collections_api_client.post(
+            "/collections",
+            headers={"Authorization": f"Bearer {outsider_token}"},
+            json={
+                "name": f"Outsider collection {int(time.time())}",
+                "description": "Different owner collection",
+            },
+        )
+        assert create_outsider_collection.status_code == 200, create_outsider_collection.text
+        outsider_collection_id = create_outsider_collection.json()["id"]
+
+        invalid_assign_response = collections_api_client.put(
+            f"/collections/datasets/{dataset.id}/collection",
+            headers={"Authorization": f"Bearer {platform_admin_token}"},
+            json={"collection_id": outsider_collection_id},
+        )
+        assert invalid_assign_response.status_code == 400
+
+        update_response = collections_api_client.patch(
+            f"/collections/{platform_admin_collection_id}",
+            headers={"Authorization": f"Bearer {platform_admin_token}"},
+            json={"description": "Updated by platform admin"},
+        )
+        assert update_response.status_code == 200, update_response.text
+        assert update_response.json()["description"] == "Updated by platform admin"
+
+        archive_response = collections_api_client.delete(
+            f"/collections/{platform_admin_collection_id}",
+            headers={"Authorization": f"Bearer {platform_admin_token}"},
+        )
+        assert archive_response.status_code == 200, archive_response.text
+        assert archive_response.json()["status"] == "archived"
+        assert _get_dataset_collection_id(local_supabase_client, dataset.id) is None
+    finally:
+        service_supabase_client.client.table("core_team_members").delete().eq(
+            "user_id", platform_admin_user_id
+        ).execute()
+        _cleanup_dataset(local_supabase_client, dataset.id)
+        if platform_admin_collection_id is not None:
+            _cleanup_collection(local_supabase_client, platform_admin_collection_id)
+        if outsider_collection_id is not None:
+            _cleanup_collection(local_supabase_client, outsider_collection_id)
+
+
+def test_dataset_shared_read_user_cannot_manage_other_users_collections(
+    collections_api_client: TestClient,
+    local_supabase_client: SupabaseClient,
+    service_supabase_client: SupabaseClient,
+    auth_tokens: tuple[str, str],
+):
+    owner_token, _ = auth_tokens
+    supabase_url, supabase_key, _, _ = require_supabase_auth_env(
+        skip_prefix="Skipping collections authz integration test"
+    )
+    shared_email = f"collections-shared-read-{int(time.time())}@example.test"
+    shared_password = "CollectionsSharedReadPassw0rd!"
+    shared_token = ensure_user_token(
+        supabase_url=supabase_url,
+        supabase_key=supabase_key,
+        email=shared_email,
+        password=shared_password,
+    )
+    shared_user_id, _ = _resolve_user_identity(supabase_url, supabase_key, shared_token)
+
+    dataset = _create_private_dataset(local_supabase_client)
+    collection_id = None
+
+    service_supabase_client.client.table("dataset_user_access").upsert(
+        {
+            "dataset_id": dataset.id,
+            "grantee_user_id": shared_user_id,
+            "permission": "read",
+            "granted_by_user_id": dataset.user_id,
+        }
+    ).execute()
+
+    try:
+        owner_collection_response = collections_api_client.post(
+            "/collections",
+            headers={"Authorization": f"Bearer {owner_token}"},
+            json={
+                "name": f"Owner collection for viewer restriction {int(time.time())}",
+                "description": "Owned by dataset owner",
+            },
+        )
+        assert owner_collection_response.status_code == 200, owner_collection_response.text
+        collection_id = owner_collection_response.json()["id"]
+
+        list_response = collections_api_client.get(
+            "/collections",
+            headers={"Authorization": f"Bearer {shared_token}"},
+            params={"owner_user_id": dataset.user_id},
+        )
+        assert list_response.status_code == 403
+
+        create_response = collections_api_client.post(
+            "/collections",
+            headers={"Authorization": f"Bearer {shared_token}"},
+            json={
+                "name": f"Shared read forbidden collection {int(time.time())}",
+                "description": "Should not be allowed",
+                "owner_user_id": dataset.user_id,
+            },
+        )
+        assert create_response.status_code == 403
+
+        assign_response = collections_api_client.put(
+            f"/collections/datasets/{dataset.id}/collection",
+            headers={"Authorization": f"Bearer {shared_token}"},
+            json={"collection_id": collection_id},
+        )
+        assert assign_response.status_code == 404
+    finally:
+        service_supabase_client.client.table("dataset_user_access").delete().eq(
+            "dataset_id", dataset.id
+        ).eq("grantee_user_id", shared_user_id).execute()
         _cleanup_dataset(local_supabase_client, dataset.id)
         if collection_id is not None:
             _cleanup_collection(local_supabase_client, collection_id)
