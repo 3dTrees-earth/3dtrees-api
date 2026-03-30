@@ -1385,23 +1385,46 @@ class SupabaseClient:
     # Download requests
     # =========================================================================
 
-    def is_core_team_member(self, user_id: str) -> bool:
-        """Return True when a user is marked active in core_team_members."""
+    def has_platform_dataset_admin(self, user_id: str) -> bool:
+        """Return True when the user has platform-wide dataset admin access."""
         if not self.client:
             raise RuntimeError("Not connected to Supabase. Call connect() first.")
 
         try:
-            response = (
-                self.client.table("core_team_members")
-                .select("user_id")
-                .eq("user_id", user_id)
-                .eq("is_active", True)
-                .limit(1)
-                .execute()
-            )
+            response = self.client.rpc(
+                "has_platform_dataset_admin",
+                {"uid": user_id},
+            ).execute()
             return bool(response.data)
         except Exception as e:
-            raise RuntimeError(f"Failed to check core team membership for user {user_id}: {e}") from e
+            raise RuntimeError(
+                f"Failed to check platform dataset admin access for user {user_id}: {e}"
+            ) from e
+
+    def has_dataset_user_access(
+        self,
+        user_id: str,
+        dataset_id: int,
+        required_permission: str = "read",
+    ) -> bool:
+        """Return True when a user has explicit per-dataset shared access."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = self.client.rpc(
+                "has_dataset_user_access",
+                {
+                    "uid": user_id,
+                    "p_dataset_id": dataset_id,
+                    "required_permission": required_permission,
+                },
+            ).execute()
+            return bool(response.data)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to check dataset user access for user {user_id}, dataset {dataset_id}: {e}"
+            ) from e
 
     def get_dataset_with_items(self, dataset_id: int) -> Optional[Dict[str, Any]]:
         """Get dataset row with nested dataset_items for download packaging."""
@@ -1448,6 +1471,24 @@ class SupabaseClient:
         except Exception as e:
             raise RuntimeError(f"Failed to get dataset {dataset_id} for user: {e}") from e
 
+    def get_dataset(self, dataset_id: int) -> Optional[Dict[str, Any]]:
+        """Get one non-archived dataset row without owner scoping."""
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            response = (
+                self.client.table("datasets")
+                .select("id, user_id, archived, collection_id")
+                .eq("id", dataset_id)
+                .eq("archived", False)
+                .limit(1)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(f"Failed to get dataset {dataset_id}: {e}") from e
+
     # =========================================================================
     # Collections
     # =========================================================================
@@ -1475,6 +1516,27 @@ class SupabaseClient:
         except Exception as e:
             raise RuntimeError(f"Failed to list collections: {e}") from e
 
+    def list_collections(
+        self,
+        include_archived: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+        owner_user_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            query = self.client.table("collections").select("*")
+            if owner_user_id:
+                query = query.eq("owner_user_id", owner_user_id)
+            if not include_archived:
+                query = query.eq("archived", False)
+            response = query.order("created_at", desc=True).limit(limit).offset(offset).execute()
+            return response.data or []
+        except Exception as e:
+            raise RuntimeError(f"Failed to list collections: {e}") from e
+
     def get_collection_for_user(
         self,
         collection_id: int,
@@ -1490,6 +1552,28 @@ class SupabaseClient:
                 .select("*")
                 .eq("id", collection_id)
                 .eq("owner_user_id", owner_user_id)
+                .limit(1)
+            )
+            if not include_archived:
+                query = query.eq("archived", False)
+            response = query.execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            raise RuntimeError(f"Failed to get collection {collection_id}: {e}") from e
+
+    def get_collection(
+        self,
+        collection_id: int,
+        include_archived: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase. Call connect() first.")
+
+        try:
+            query = (
+                self.client.table("collections")
+                .select("*")
+                .eq("id", collection_id)
                 .limit(1)
             )
             if not include_archived:
