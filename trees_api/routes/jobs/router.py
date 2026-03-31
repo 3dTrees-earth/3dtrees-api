@@ -48,6 +48,7 @@ def create_job(
         overwrite=overwrite,
         parameters=parameters,
         requesting_user_id=user.id,
+        requesting_user_email=user.email,
         galaxy=galaxy,
         supabase=supabase,
         storage=storage,
@@ -65,8 +66,8 @@ def list_jobs(
     return service.list_jobs(
         dataset_id=dataset_id,
         requesting_user_id=user.id,
+        requesting_user_email=user.email,
         limit=limit,
         offset=offset,
         supabase=supabase,
     )
-

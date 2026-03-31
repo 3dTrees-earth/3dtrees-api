@@ -11,6 +11,33 @@ from trees_api.integrations.storage.client import StorageClient
 from trees_api.integrations.supabase.client import SupabaseClient
 
 logger = logging.getLogger("trees_api.routes.jobs.service")
+PROCESSOR_EMAIL = "processor@3dtrees.earth"
+
+
+def _can_access_dataset_jobs(
+    *,
+    dataset: Dict[str, Any],
+    dataset_id: int,
+    requesting_user_id: str,
+    requesting_user_email: str,
+    required_permission: str,
+    supabase: SupabaseClient,
+) -> bool:
+    owner_id = dataset.get("user_id")
+    if owner_id == requesting_user_id:
+        return True
+    if (requesting_user_email or "").strip().lower() == PROCESSOR_EMAIL:
+        return True
+
+    has_platform_admin = supabase.has_platform_dataset_admin(requesting_user_id)
+    if has_platform_admin:
+        return True
+
+    return supabase.has_dataset_user_access(
+        requesting_user_id,
+        dataset_id,
+        required_permission=required_permission,
+    )
 
 
 def invoke_workflow_with_collection(
@@ -84,6 +111,7 @@ def create_job(
     overwrite: bool,
     parameters: dict,
     requesting_user_id: str,
+    requesting_user_email: str,
     galaxy: Optional[GalaxyClient],
     supabase: Optional[SupabaseClient],
     storage: Optional[StorageClient],
@@ -125,10 +153,26 @@ def create_job(
             status_code=400,
             detail=f"Dataset {dataset_id_int} is archived",
         )
-    if dataset.get("user_id") != requesting_user_id:
+    try:
+        can_trigger_job = _can_access_dataset_jobs(
+            dataset=dataset,
+            dataset_id=dataset_id_int,
+            requesting_user_id=requesting_user_id,
+            requesting_user_email=requesting_user_email,
+            required_permission="edit",
+            supabase=supabase,
+        )
+    except Exception as error:
+        logger.error("Failed to resolve job trigger permissions: %s", error)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not verify job trigger permissions",
+        ) from error
+
+    if not can_trigger_job:
         raise HTTPException(
             status_code=403,
-            detail="Only the dataset owner can trigger jobs",
+            detail="Job trigger access denied for this dataset",
         )
 
     dataset_items = dataset.get("dataset_items") or []
@@ -235,6 +279,7 @@ def list_jobs(
     *,
     dataset_id: Optional[int],
     requesting_user_id: str,
+    requesting_user_email: str,
     limit: int,
     offset: int,
     supabase: Optional[SupabaseClient],
@@ -245,14 +290,49 @@ def list_jobs(
             detail="Supabase service is unavailable. Please check /health for details.",
         )
 
+    if dataset_id is not None:
+        dataset = supabase.get_dataset_with_items(dataset_id)
+        if not dataset:
+            return []
+        try:
+            can_view_jobs = _can_access_dataset_jobs(
+                dataset=dataset,
+                dataset_id=dataset_id,
+                requesting_user_id=requesting_user_id,
+                requesting_user_email=requesting_user_email,
+                required_permission="read",
+                supabase=supabase,
+            )
+        except Exception as error:
+            logger.error("Failed to resolve job listing permissions: %s", error)
+            raise HTTPException(
+                status_code=503,
+                detail="Could not verify job listing permissions",
+            ) from error
+
+        if not can_view_jobs:
+            return []
+        return supabase.get_workflow_invocations_by_dataset_id(
+            dataset_id, limit=limit, offset=offset
+        )
+
+    if (requesting_user_email or "").strip().lower() == PROCESSOR_EMAIL:
+        return supabase.get_workflow_invocations(limit=limit, offset=offset)
+
+    try:
+        has_platform_admin = supabase.has_platform_dataset_admin(requesting_user_id)
+    except Exception as error:
+        logger.error("Failed to resolve platform admin permissions for job listing: %s", error)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not verify job listing permissions",
+        ) from error
+
+    if has_platform_admin:
+        return supabase.get_workflow_invocations(limit=limit, offset=offset)
+
     datasets = supabase.get_datasets(user_id=requesting_user_id)
     dataset_ids = [dataset.id for dataset in datasets if dataset.id is not None]
-
-    if dataset_id is not None:
-        if dataset_id in dataset_ids:
-            dataset_ids = [dataset_id]
-        else:
-            return []
 
     all_invocations = []
     for row_dataset_id in dataset_ids:
@@ -263,4 +343,3 @@ def list_jobs(
 
     all_invocations.sort(key=lambda row: row.created_at, reverse=True)
     return all_invocations[offset : offset + limit]
-
