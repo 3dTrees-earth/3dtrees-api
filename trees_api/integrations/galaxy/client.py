@@ -1107,7 +1107,39 @@ class GalaxyClient:
         # Invoke workflow
         return self.invoke_workflow(workflow_name, inputs, history_name)
     
-    def create_history(self, name: str):
+    def set_history_preferred_object_store(
+        self, history_id: str, preferred_object_store_id: str
+    ) -> None:
+        """
+        Set the preferred object store on an existing history.
+
+        Args:
+            history_id: Galaxy history ID
+            preferred_object_store_id: Preferred object store to use for new datasets
+
+        Raises:
+            RuntimeError: If not connected to Galaxy
+            RuntimeError: If the history update fails
+        """
+        if not self.gi:
+            raise RuntimeError("Not connected to Galaxy. Call connect() first.")
+
+        try:
+            logger.info(
+                "Setting preferred object store for history %s to %s",
+                history_id,
+                preferred_object_store_id,
+            )
+            self.gi.gi.histories.update_history(
+                history_id,
+                preferred_object_store_id=preferred_object_store_id,
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to set preferred object store for history '{history_id}': {e}"
+            ) from e
+
+    def create_history(self, name: str, preferred_object_store_id: Optional[str] = None):
         """
         Create a new history.
         
@@ -1127,6 +1159,10 @@ class GalaxyClient:
         try:
             logger.debug(f"Creating history: {name}")
             history = self.gi.histories.create(name=name)
+            if preferred_object_store_id:
+                self.set_history_preferred_object_store(
+                    history.id, preferred_object_store_id
+                )
             logger.info(f"Created history: {history.name} (ID: {history.id})")
             return history
         except Exception as e:

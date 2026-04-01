@@ -222,21 +222,40 @@ def create_job(
                     old_history_id,
                 )
 
+    preferred_object_store_id = None
+    preferred_intermediate_object_store_id = None
+    preferred_outputs_object_store_id = None
+    if workflow_name == "EndToEndPipeline-GalaxyEU":
+        preferred_object_store_id = (
+            galaxy.config.default_object_store_id or "s3_scratch_netapp01"
+        )
+        preferred_intermediate_object_store_id = (
+            galaxy.config.default_intermediate_object_store_id
+        )
+        preferred_outputs_object_store_id = galaxy.config.default_outputs_object_store_id
+
     history_name = f"{workflow_name} - Dataset {dataset_id}"
     existing_history = supabase.get_galaxy_history_by_dataset(dataset_id_int)
 
-    if existing_history:
-        galaxy_history_id = existing_history["history_id"]
-        galaxy_history_fk = existing_history["id"]
-        s3_base_path = existing_history.get("s3_base_path", f"{dataset_id}/")
-        logger.info(
-            "Reusing existing Galaxy history %s for dataset %s",
-            galaxy_history_id,
-            dataset_id,
-        )
-    else:
-        try:
-            new_history = galaxy.create_history(name=history_name)
+    try:
+        if existing_history:
+            galaxy_history_id = existing_history["history_id"]
+            galaxy_history_fk = existing_history["id"]
+            s3_base_path = existing_history.get("s3_base_path", f"{dataset_id}/")
+            logger.info(
+                "Reusing existing Galaxy history %s for dataset %s",
+                galaxy_history_id,
+                dataset_id,
+            )
+            if preferred_object_store_id:
+                galaxy.set_history_preferred_object_store(
+                    galaxy_history_id, preferred_object_store_id
+                )
+        else:
+            new_history = galaxy.create_history(
+                name=history_name,
+                preferred_object_store_id=preferred_object_store_id,
+            )
             galaxy_history_id = new_history.id
             s3_base_path = f"{dataset_id}/"
             history_record = supabase.get_or_create_galaxy_history(
@@ -251,10 +270,10 @@ def create_job(
                 galaxy_history_id,
                 dataset_id,
             )
-        except Exception as error:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to create Galaxy history: {error}"
-            ) from error
+    except Exception as error:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to prepare Galaxy history: {error}"
+        ) from error
 
     workflow_parameters = build_workflow_parameters(
         galaxy_client=galaxy,
@@ -263,18 +282,6 @@ def create_job(
         dataset_id=dataset_id_int,
         s3_base_path=s3_base_path,
     )
-
-    preferred_object_store_id = None
-    preferred_intermediate_object_store_id = None
-    preferred_outputs_object_store_id = None
-    if workflow_name == "EndToEndPipeline-GalaxyEU":
-        preferred_object_store_id = (
-            galaxy.config.default_object_store_id or "s3_scratch_netapp01"
-        )
-        preferred_intermediate_object_store_id = (
-            galaxy.config.default_intermediate_object_store_id
-        )
-        preferred_outputs_object_store_id = galaxy.config.default_outputs_object_store_id
 
     return invoke_workflow_with_collection(
         galaxy=galaxy,

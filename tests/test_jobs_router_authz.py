@@ -32,8 +32,13 @@ class FakeGalaxyClient:
             default_outputs_object_store_id=None,
         )
 
-    def create_history(self, name: str):
+    def create_history(self, name: str, preferred_object_store_id: str | None = None):
         return SimpleNamespace(id=f"history-{int(time.time() * 1000)}")
+
+    def set_history_preferred_object_store(
+        self, history_id: str, preferred_object_store_id: str
+    ) -> None:
+        return None
 
     def delete_history(self, history_id: str, purge: bool = True) -> bool:
         return True
