@@ -388,6 +388,7 @@ def complete_ingestion(
                 overwrite=request.overwrite,
                 parameters=request.parameters,
                 requesting_user_id=user.id,
+                requesting_user_email=user.email,
                 galaxy=galaxy,
                 supabase=supabase,
                 storage=processing_storage,
@@ -465,4 +466,3 @@ def list_ingestions(
         items = supabase.list_ingestion_session_items(session["id"])
         results.append(_serialize_ingestion(session, items))
     return results
-

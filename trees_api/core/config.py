@@ -86,6 +86,10 @@ class SupabaseConfig(BaseSettings):
     url: str = Field(default="", description="Supabase project URL")
     key: str = Field(default="", description="Supabase anon/public key")
     service_key: Optional[str] = Field(default=None, description="Supabase service role key (for admin operations)")
+    processor_user_id: Optional[str] = Field(
+        default=None,
+        description="Supabase auth.users.id for the processor account. Preferred over email-based processor checks.",
+    )
     email: Optional[str] = Field(default=None, description="Supabase user email (optional with service_role key)")
     password: Optional[str] = Field(default=None, description="Supabase user password")
     datasets_table: str = Field(default="datasets", description="Supabase datasets table name")
@@ -225,4 +229,3 @@ class AppConfig:
 
         if errors:
             raise ValueError(f"Configuration errors: {'; '.join(errors)}")
-

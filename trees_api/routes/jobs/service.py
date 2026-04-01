@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
+from trees_api.core.config import SupabaseConfig
 from trees_api.core.workflow_config import build_workflow_parameters
 from trees_api.integrations.galaxy.client import GalaxyClient
 from trees_api.integrations.storage.client import StorageClient
@@ -12,6 +13,19 @@ from trees_api.integrations.supabase.client import SupabaseClient
 
 logger = logging.getLogger("trees_api.routes.jobs.service")
 PROCESSOR_EMAIL = "processor@3dtrees.earth"
+
+
+def _is_processor_user(
+    *,
+    requesting_user_id: str,
+    requesting_user_email: str,
+) -> bool:
+    processor_user_id = (SupabaseConfig().processor_user_id or "").strip().lower()
+    if processor_user_id and (requesting_user_id or "").strip().lower() == processor_user_id:
+        return True
+
+    # Keep the legacy email path during migration so existing environments continue to work.
+    return (requesting_user_email or "").strip().lower() == PROCESSOR_EMAIL
 
 
 def _can_access_dataset_jobs(
@@ -26,7 +40,10 @@ def _can_access_dataset_jobs(
     owner_id = dataset.get("user_id")
     if owner_id == requesting_user_id:
         return True
-    if (requesting_user_email or "").strip().lower() == PROCESSOR_EMAIL:
+    if _is_processor_user(
+        requesting_user_id=requesting_user_id,
+        requesting_user_email=requesting_user_email,
+    ):
         return True
 
     has_platform_admin = supabase.has_platform_dataset_admin(requesting_user_id)
@@ -316,7 +333,10 @@ def list_jobs(
             dataset_id, limit=limit, offset=offset
         )
 
-    if (requesting_user_email or "").strip().lower() == PROCESSOR_EMAIL:
+    if _is_processor_user(
+        requesting_user_id=requesting_user_id,
+        requesting_user_email=requesting_user_email,
+    ):
         return supabase.get_workflow_invocations(limit=limit, offset=offset)
 
     try:

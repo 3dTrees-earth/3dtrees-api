@@ -315,6 +315,8 @@ def test_complete_ingestion_triggers_existing_jobs_service(monkeypatch):
     def _fake_create_job(**kwargs):
         assert kwargs["dataset_id"] == "10"
         assert kwargs["workflow_name"] == "EndToEndPipeline"
+        assert kwargs["requesting_user_id"] == "owner-1"
+        assert kwargs["requesting_user_email"] == "owner@example.com"
         return _Invocation()
 
     monkeypatch.setattr(ingestion_router_module.jobs_service, "create_job", _fake_create_job)
@@ -339,4 +341,3 @@ def test_complete_ingestion_triggers_existing_jobs_service(monkeypatch):
     assert payload["workflow_triggered"] is True
     assert payload["workflow_invocation_id"] == "inv-123"
     assert fake_supabase.dataset_items[111]["bucket_path"] == "RAW/10/111/raw.laz"
-
